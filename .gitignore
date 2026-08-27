@@ -3,8 +3,11 @@ node_modules/
 
 # React Native / Android build outputs
 android/.gradle/
+android/.cxx/
+android/app/.cxx/
 android/build/
 android/app/build/
+android/local.properties
 *.apk
 *.aab
 
