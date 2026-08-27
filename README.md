@@ -16,32 +16,132 @@ Android-приложение-антология коротких независ�
 
 ## Статус проекта
 
-**Стадия:** IDEA → PROTOTYPE.
+**Стадия:** PROTOTYPE.
 
-Разработка начинается **28 августа 2026 года**. Жёсткий предел разработки первого MVP — **10 сентября 2026 года включительно** (14 календарных дней).
+Android bootstrap `v0.1.0` реализован и вручную проверен на Windows и реальном Android-устройстве: TypeScript, ESLint и Jest проходят; debug APK собирается Gradle; приложение устанавливается, запускается через Metro и успешно проходит повторный запуск после полного закрытия.
 
-На текущем этапе в репозитории фиксируются продуктовые и технические решения. Рабочей Android-сборки пока нет; первая реализация начинается с `v0.1.0`.
+Жёсткий предел разработки первого MVP — **10 сентября 2026 года включительно**. Первый MVP должен содержать одну полностью законченную историю — «Завалинка» — и быть подготовлен к публикации в RuStore.
 
-Первый MVP должен содержать одну полностью законченную историю — «Завалинка» — и быть подготовлен к публикации в RuStore. Модерация магазина может завершиться после 10 сентября; после дедлайна допускаются только исправления, необходимые для прохождения модерации или устранения release-blocker дефектов.
+## Технический baseline v0.1.0
+
+- React Native `0.87.1`;
+- React `19.2.3`;
+- TypeScript `6.0.3`;
+- Node.js: `>=22.13.0`, `.nvmrc` — `22.23.2`;
+- JDK `17`;
+- Gradle `9.4.1`;
+- Android SDK Platform `37.0` (`compileSdk = 37`);
+- Android Build Tools `37.0.0`;
+- Android NDK `27.1.12297006`;
+- `applicationId`: `io.github.regstar2.textquestanthology`;
+- `versionName`: `0.1.0`;
+- `versionCode`: `1`.
+
+Локальная acceptance-проверка также успешно выполнена на Node.js `24.15.0`.
 
 ## Быстрый старт
 
-Пока код приложения не создан, репозиторий используется как исходная точка разработки:
+### 1. Клонирование и зависимости
 
 ```powershell
 git clone https://github.com/Regstar2/text-quest-anthology.git
 cd text-quest-anthology
+npm ci
+npm run verify
 ```
 
-Дальнейшие команды появятся после `v0.1.0`, когда будут зафиксированы фактические версии Node.js, React Native, Android SDK и Gradle.
+### 2. Android SDK
 
-Перед реализацией читать в таком порядке:
+Для Windows с кириллицей или другими non-ASCII символами в имени профиля рекомендуется держать Android SDK в ASCII-пути, например:
 
-1. [`docs/product/mvp-scope.md`](docs/product/mvp-scope.md)
-2. [`docs/product/roadmap.md`](docs/product/roadmap.md)
-3. [`docs/architecture/tech-stack.md`](docs/architecture/tech-stack.md)
-4. [`docs/architecture/architecture.md`](docs/architecture/architecture.md)
-5. [`docs/testing/manual-test-plan.md`](docs/testing/manual-test-plan.md)
+```text
+C:\Android\Sdk
+```
+
+И создать локальный `android/local.properties`:
+
+```text
+sdk.dir=C:/Android/Sdk
+```
+
+`android/local.properties` является machine-specific файлом и не коммитится.
+
+Необходимые Android-компоненты:
+
+```text
+platform-tools
+platforms;android-37.0
+build-tools;37.0.0
+ndk;27.1.12297006
+```
+
+CMake `3.22.1` может быть автоматически установлен Android Gradle Plugin при первой native-сборке.
+
+### 3. Сборка debug APK
+
+```powershell
+cd android
+.\gradlew.bat assembleDebug
+```
+
+Debug APK:
+
+```text
+android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Для быстрой локальной сборки только ARM64 можно использовать:
+
+```powershell
+.\gradlew.bat assembleDebug -PreactNativeArchitectures=arm64-v8a
+```
+
+Не используйте `clean` без необходимости: он удаляет build/cache state и заметно замедляет следующую сборку.
+
+### 4. Metro и запуск на устройстве
+
+В первом терминале:
+
+```powershell
+npm start
+```
+
+Во втором терминале после подключения устройства с USB debugging:
+
+```powershell
+adb devices
+adb reverse tcp:8081 tcp:8081
+adb install -r android\app\build\outputs\apk\debug\app-debug.apk
+adb shell am force-stop io.github.regstar2.textquestanthology
+adb shell am start -n io.github.regstar2.textquestanthology/.MainActivity
+```
+
+В debug-режиме при запуске приложение получает JavaScript bundle от Metro, поэтому кратковременный статус `Building...` является штатным. В release build Metro не требуется.
+
+## Проверки
+
+```powershell
+npm run typecheck
+npm run lint
+npm test -- --runInBand
+```
+
+Или одной командой:
+
+```powershell
+npm run verify
+```
+
+На `v0.1.0` фактически проверено:
+
+- установка JS-зависимостей;
+- TypeScript typecheck;
+- ESLint;
+- Jest;
+- Android `assembleDebug`;
+- установка APK через ADB;
+- запуск на реальном устройстве;
+- полный stop и повторный запуск приложения.
 
 ## Архитектура
 
@@ -82,8 +182,6 @@ RuStore и Yandex Mobile Ads не являются частью narrative core. 
 - [`docs/testing/manual-test-plan.md`](docs/testing/manual-test-plan.md) — минимальный release test plan.
 
 ## Дорожная карта
-
-Коротко:
 
 ```text
 v0.1.x  технический прототип Android + Ink + saves + РСЯ
