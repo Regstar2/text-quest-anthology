@@ -7,16 +7,16 @@ import story0 from './zavalinka/story.json';
 export const STORY_MANIFEST = [
   {
     metadata: {
-      "id": "zavalinka",
-      "schemaVersion": 1,
-      "contentVersion": 1,
-      "title": "Завалинка",
-      "description": "Технический placeholder первой истории для проверки story package pipeline.",
-      "cover": "assets/cover.webp"
+      id: 'zavalinka',
+      schemaVersion: 1,
+      contentVersion: 1,
+      title: 'Завалинка',
+      description: 'Технический placeholder первой истории для проверки story package pipeline.',
+      cover: 'assets/cover.webp',
     },
     compiledStory: story0 as InkStoryContent,
     assets: {
-      cover: "stories/zavalinka/assets/cover.webp",
+      cover: 'stories/zavalinka/assets/cover.webp',
     },
   },
 ] satisfies readonly StoryManifestEntry[];
