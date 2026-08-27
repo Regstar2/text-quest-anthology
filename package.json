@@ -13,8 +13,9 @@
     "pretypecheck": "npm run compile:stories",
     "start": "react-native start",
     "test": "jest",
+    "test:story-packages": "node scripts/test-story-packages.cjs",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run compile:stories && npm run typecheck && npm run lint && npm test -- --runInBand"
+    "verify": "npm run compile:stories && npm run test:story-packages && npm run typecheck && npm run lint && npm test -- --runInBand"
   },
   "dependencies": {
     "inkjs": "2.4.0",

@@ -1,24 +1,28 @@
-import syntheticStory from '../src/stories/generated/synthetic.json';
 import {
   InkStoryRuntime,
   type InkRuntimeSnapshot,
-  type InkStoryContent,
 } from '../src/narrative/InkStoryRuntime';
+import {storyLoader} from '../src/narrative/StoryLoader';
 
-const COMPILED_STORY = syntheticStory as InkStoryContent;
+const STORY_METADATA = storyLoader.listMetadata()[0];
+
+if (!STORY_METADATA) {
+  throw new Error('Expected at least one generated story fixture.');
+}
 
 function startStory(): {
   runtime: InkStoryRuntime;
   snapshot: InkRuntimeSnapshot;
 } {
-  const runtime = new InkStoryRuntime(COMPILED_STORY);
+  const storyPackage = storyLoader.load(STORY_METADATA.id);
+  const runtime = new InkStoryRuntime(storyPackage.compiledStory);
   return {
     runtime,
     snapshot: runtime.continueToChoiceOrEnd(),
   };
 }
 
-describe('InkStoryRuntime synthetic story', () => {
+describe('InkStoryRuntime packaged story', () => {
   test('choice A reaches ending_a through the Ink conditional branch', () => {
     const {runtime, snapshot} = startStory();
 
@@ -49,7 +53,8 @@ describe('InkStoryRuntime synthetic story', () => {
 
     expect(() => JSON.parse(serializedState)).not.toThrow();
 
-    const restoredRuntime = new InkStoryRuntime(COMPILED_STORY);
+    const restoredStory = storyLoader.load(STORY_METADATA.id);
+    const restoredRuntime = new InkStoryRuntime(restoredStory.compiledStory);
     const restoredSnapshot = restoredRuntime.importState(serializedState);
 
     expect(restoredSnapshot.choices).toEqual(snapshot.choices);
