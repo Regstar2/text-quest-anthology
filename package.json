@@ -1,17 +1,23 @@
 {
   "name": "text-quest-anthology",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
+    "compile:stories": "node scripts/compile-stories.cjs",
     "doctor": "react-native doctor",
     "lint": "eslint .",
+    "preandroid": "npm run compile:stories",
+    "prestart": "npm run compile:stories",
+    "pretest": "npm run compile:stories",
+    "pretypecheck": "npm run compile:stories",
     "start": "react-native start",
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && npm run lint && npm test -- --runInBand"
+    "verify": "npm run compile:stories && npm run typecheck && npm run lint && npm test -- --runInBand"
   },
   "dependencies": {
+    "inkjs": "2.4.0",
     "react": "19.2.3",
     "react-native": "0.87.1",
     "react-native-safe-area-context": "5.8.1"

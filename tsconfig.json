@@ -1,5 +1,8 @@
 {
   "extends": "@react-native/typescript-config",
+  "compilerOptions": {
+    "resolveJsonModule": true
+  },
   "include": ["src/**/*.ts", "src/**/*.tsx", "__tests__/**/*.ts", "__tests__/**/*.tsx"],
   "exclude": ["node_modules", "android/build", "android/app/build"]
 }

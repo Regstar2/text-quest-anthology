@@ -1,4 +1,6 @@
 export const UI_STRINGS = {
-  bootstrapTitle: 'Text Quest Anthology',
-  bootstrapStatus: 'Android-основа v0.1.0 запущена.',
+  prototypeTitle: 'Ink runtime prototype',
+  prototypeStatus: 'v0.1.1 · synthetic story',
+  endingLabel: 'Терминальная концовка',
+  restart: 'Начать заново',
 } as const;
