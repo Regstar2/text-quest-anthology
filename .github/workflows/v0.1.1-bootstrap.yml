@@ -1,0 +1,50 @@
+name: v0.1.1 bootstrap verification
+
+on:
+  push:
+    branches:
+      - feature/v0.1.1-ink-runtime
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-lock:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/v0.1.1-ink-runtime
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install and lock dependencies
+        run: npm install
+
+      - name: Compile Ink stories
+        run: npm run compile:stories
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --runInBand
+
+      - name: Commit lockfile and compiled story
+        shell: bash
+        run: |
+          rm .github/workflows/v0.1.1-bootstrap.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json src/stories/generated/synthetic.json .github/workflows/v0.1.1-bootstrap.yml
+          git commit -m "chore: lock inkjs dependency and compiled story"
+          git push origin HEAD:feature/v0.1.1-ink-runtime
