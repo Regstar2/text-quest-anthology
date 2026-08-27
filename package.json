@@ -14,7 +14,7 @@
   "dependencies": {
     "react": "19.2.3",
     "react-native": "0.87.1",
-    "react-native-safe-area-context": "5.5.2"
+    "react-native-safe-area-context": "5.8.1"
   },
   "devDependencies": {
     "@babel/core": "7.28.4",
