@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# React Native / Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+*.apk
+*.aab
+
+# JavaScript / TypeScript outputs
+coverage/
+dist/
+build/
+*.log
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Android signing material
+*.jks
+*.keystore
+keystore.properties
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Private project workflow files
+AGENTS.md
+.project-rules/
+docs/ai-prompts/
+.codex/
