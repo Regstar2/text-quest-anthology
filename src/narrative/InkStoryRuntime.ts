@@ -66,7 +66,7 @@ export class InkStoryRuntime {
 
   importState(serializedState: string): InkRuntimeSnapshot {
     this.story.state.LoadJson(serializedState);
-    this.currentText = this.story.currentText.trim();
+    this.currentText = (this.story.currentText ?? '').trim();
     this.endingId = this.readEndingId(this.story.currentTags ?? []);
     return this.snapshot();
   }
