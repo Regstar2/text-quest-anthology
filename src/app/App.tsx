@@ -1,8 +1,8 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
-  Alert,
   AppState,
   BackHandler,
+  Modal,
   Pressable,
   ScrollView,
   StatusBar,
@@ -29,11 +29,28 @@ import {storySaveRepository} from '../persistence/NativeStorySaveStorage';
 const DEFAULT_STORY = storyLoader.listMetadata()[0];
 const AdsBanner = adsProvider.Banner;
 const STORY_LINE_HEIGHT = 28;
-const PAGE_GAP = 14;
-const PAGE_VERTICAL_PADDING = 36;
+const PAGE_GAP = 12;
+const PAGE_VERTICAL_PADDING = 16;
+const PARAGRAPH_INDENT = '\u2003\u2003';
 
 type AppScreen = 'start' | 'reader' | 'ending';
 type ReaderMode = 'pages' | 'feed';
+type MenuView = 'menu' | 'restart' | null;
+
+type MeasuredLine = Readonly<{
+  paragraphIndex: number;
+  lineIndex: number;
+  text: string;
+}>;
+
+type PageSegment = Readonly<{
+  paragraphIndex: number;
+  text: string;
+}>;
+
+type ReaderPage = Readonly<{
+  segments: readonly PageSegment[];
+}>;
 
 if (!DEFAULT_STORY) {
   throw new Error('STORY_NOT_FOUND: Generated story manifest is empty.');
@@ -48,6 +65,7 @@ export function App(): React.JSX.Element {
   const hasStartedSessionRef = useRef(false);
   const [screen, setScreen] = useState<AppScreen>('start');
   const [readerMode, setReaderMode] = useState<ReaderMode>('pages');
+  const [menuView, setMenuView] = useState<MenuView>(null);
   const [snapshot, setSnapshot] = useState<StoryReaderSnapshot | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,7 +73,9 @@ export function App(): React.JSX.Element {
   const [hasStartedSession, setHasStartedSession] = useState(false);
   const [pageHeight, setPageHeight] = useState(0);
   const [choiceHeight, setChoiceHeight] = useState(0);
-  const [measuredLines, setMeasuredLines] = useState<readonly string[]>([]);
+  const [paragraphLines, setParagraphLines] = useState<
+    Readonly<Record<number, readonly string[]>>
+  >({});
 
   const beginMutation = (): boolean => {
     if (mutationLockRef.current) {
@@ -76,6 +96,7 @@ export function App(): React.JSX.Element {
       return;
     }
 
+    setMenuView(null);
     setScreen('start');
     const session = sessionRef.current;
     if (!session || !hasStartedSessionRef.current) {
@@ -123,7 +144,7 @@ export function App(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    setMeasuredLines([]);
+    setParagraphLines({});
     setChoiceHeight(0);
   }, [snapshot?.text]);
 
@@ -155,6 +176,10 @@ export function App(): React.JSX.Element {
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
+        if (menuView !== null) {
+          setMenuView(null);
+          return true;
+        }
         if (screen === 'start') {
           return false;
         }
@@ -166,7 +191,7 @@ export function App(): React.JSX.Element {
       },
     );
     return () => subscription.remove();
-  }, [exitStory, screen]);
+  }, [exitStory, menuView, screen]);
 
   const enterStory = async () => {
     const session = sessionRef.current;
@@ -257,25 +282,18 @@ export function App(): React.JSX.Element {
     if (mutationLockRef.current) {
       return;
     }
-    const showEndingAd = screen === 'ending' && snapshot?.isEnded === true;
-    Alert.alert(UI_STRINGS.restart, UI_STRINGS.restartConfirmation, [
-      {text: UI_STRINGS.cancel, style: 'cancel'},
-      {
-        text: UI_STRINGS.restart,
-        style: 'destructive',
-        onPress: () => {
-          restart(showEndingAd);
-        },
-      },
-    ]);
+    setMenuView('restart');
   };
 
-  const openStoryMenu = () => {
-    Alert.alert(UI_STRINGS.menu, undefined, [
-      {text: UI_STRINGS.returnToStart, onPress: exitStory},
-      {text: UI_STRINGS.restart, style: 'destructive', onPress: requestRestart},
-      {text: UI_STRINGS.cancel, style: 'cancel'},
-    ]);
+  const confirmRestart = () => {
+    const showEndingAd = screen === 'ending' && snapshot?.isEnded === true;
+    setMenuView(null);
+    restart(showEndingAd);
+  };
+
+  const changeReaderMode = (mode: ReaderMode) => {
+    setReaderMode(mode);
+    setMenuView(null);
   };
 
   const isBusy = isLoading || isMutating;
@@ -287,21 +305,35 @@ export function App(): React.JSX.Element {
     startActionLabel = UI_STRINGS.viewEnding;
   }
 
-  const pageTexts = useMemo(
+  const currentParagraphs = useMemo(
+    () => splitParagraphs(snapshot?.text ?? ''),
+    [snapshot?.text],
+  );
+
+  const pages = useMemo(
     () =>
-      paginateMeasuredLines(
-        measuredLines,
+      paginateParagraphs(
+        currentParagraphs,
+        paragraphLines,
         snapshot?.text ?? '',
         pageHeight,
         snapshot?.choices.length ? choiceHeight : 0,
       ),
-    [choiceHeight, measuredLines, pageHeight, snapshot?.choices.length, snapshot?.text],
+    [
+      choiceHeight,
+      currentParagraphs,
+      pageHeight,
+      paragraphLines,
+      snapshot?.choices.length,
+      snapshot?.text,
+    ],
   );
+
   const effectivePageIndex = snapshot
-    ? Math.min(snapshot.pageIndex, Math.max(pageTexts.length - 1, 0))
+    ? Math.min(snapshot.pageIndex, Math.max(pages.length - 1, 0))
     : 0;
   const isChoicePage =
-    Boolean(snapshot?.choices.length) && effectivePageIndex === pageTexts.length - 1;
+    Boolean(snapshot?.choices.length) && effectivePageIndex === pages.length - 1;
 
   const renderChoices = () => {
     if (!snapshot || snapshot.choices.length === 0) {
@@ -334,15 +366,17 @@ export function App(): React.JSX.Element {
     );
   };
 
-  const renderHeader = (label: string) => (
+  const renderHeader = () => (
     <View style={[styles.readerHeader, isDarkMode && styles.headerDark]}>
-      <Text style={[styles.readerTitle, isDarkMode && styles.textDark]}>{label}</Text>
+      <Text style={[styles.readerTitle, isDarkMode && styles.textDark]}>
+        {DEFAULT_STORY.title}
+      </Text>
       <Pressable
         accessibilityLabel={UI_STRINGS.menu}
         accessibilityRole="button"
         disabled={isBusy}
         hitSlop={8}
-        onPress={openStoryMenu}
+        onPress={() => setMenuView('menu')}
         style={({pressed}) => [
           styles.menuButton,
           pressed && styles.buttonPressed,
@@ -351,6 +385,152 @@ export function App(): React.JSX.Element {
         <Text style={[styles.menuButtonText, isDarkMode && styles.textDark]}>⋮</Text>
       </Pressable>
     </View>
+  );
+
+  const renderMenu = () => (
+    <Modal
+      animationType="fade"
+      onRequestClose={() => setMenuView(null)}
+      transparent
+      visible={menuView !== null}>
+      <Pressable style={styles.menuBackdrop} onPress={() => setMenuView(null)}>
+        <Pressable
+          onPress={event => event.stopPropagation()}
+          style={[styles.menuSheet, isDarkMode && styles.menuSheetDark]}>
+          {menuView === 'restart' ? (
+            <>
+              <View style={styles.menuHeadingBlock}>
+                <Text style={[styles.menuTitle, isDarkMode && styles.textDark]}>
+                  {UI_STRINGS.restart}?
+                </Text>
+                <Text
+                  style={[
+                    styles.menuDescription,
+                    isDarkMode && styles.textMutedDark,
+                  ]}>
+                  {UI_STRINGS.restartConfirmation}
+                </Text>
+              </View>
+
+              <View style={styles.confirmActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setMenuView('menu')}
+                  style={({pressed}) => [
+                    styles.menuSecondaryAction,
+                    isDarkMode && styles.menuSecondaryActionDark,
+                    pressed && styles.buttonPressed,
+                  ]}>
+                  <Text style={[styles.menuActionText, isDarkMode && styles.textDark]}>
+                    {UI_STRINGS.cancel}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={isBusy}
+                  onPress={confirmRestart}
+                  style={({pressed}) => [
+                    styles.menuDangerAction,
+                    pressed && styles.buttonPressed,
+                    isBusy && styles.disabled,
+                  ]}>
+                  <Text style={styles.menuDangerActionText}>{UI_STRINGS.restart}</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.menuGrabber} />
+              <Text style={[styles.menuTitle, isDarkMode && styles.textDark]}>
+                {UI_STRINGS.menu}
+              </Text>
+
+              <View style={styles.menuSection}>
+                <Text
+                  style={[
+                    styles.menuSectionLabel,
+                    isDarkMode && styles.textMutedDark,
+                  ]}>
+                  {UI_STRINGS.readerModeLabel}
+                </Text>
+                <View style={styles.modeSelector}>
+                  {(['pages', 'feed'] as const).map(mode => {
+                    const selected = readerMode === mode;
+                    const label =
+                      mode === 'pages'
+                        ? UI_STRINGS.readerModePages
+                        : UI_STRINGS.readerModeFeed;
+                    return (
+                      <Pressable
+                        accessibilityLabel={label}
+                        accessibilityRole="button"
+                        accessibilityState={{selected}}
+                        key={mode}
+                        onPress={() => changeReaderMode(mode)}
+                        style={({pressed}) => [
+                          styles.modeButton,
+                          isDarkMode && styles.modeButtonDark,
+                          selected && styles.modeButtonSelected,
+                          isDarkMode && selected && styles.modeButtonSelectedDark,
+                          pressed && styles.buttonPressed,
+                        ]}>
+                        <Text
+                          style={[
+                            styles.modeButtonText,
+                            isDarkMode && styles.textDark,
+                            selected && styles.modeButtonTextSelected,
+                          ]}>
+                          {label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.menuDivider} />
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={exitStory}
+                style={({pressed}) => [
+                  styles.menuRow,
+                  pressed && styles.menuRowPressed,
+                ]}>
+                <Text style={[styles.menuRowIcon, isDarkMode && styles.textDark]}>⌂</Text>
+                <Text style={[styles.menuRowText, isDarkMode && styles.textDark]}>
+                  {UI_STRINGS.returnToStart}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={requestRestart}
+                style={({pressed}) => [
+                  styles.menuRow,
+                  pressed && styles.menuRowPressed,
+                ]}>
+                <Text style={styles.menuDangerIcon}>↻</Text>
+                <Text style={styles.menuDangerText}>{UI_STRINGS.restart}</Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setMenuView(null)}
+                style={({pressed}) => [
+                  styles.menuCloseButton,
+                  isDarkMode && styles.menuSecondaryActionDark,
+                  pressed && styles.buttonPressed,
+                ]}>
+                <Text style={[styles.menuActionText, isDarkMode && styles.textDark]}>
+                  {UI_STRINGS.cancel}
+                </Text>
+              </Pressable>
+            </>
+          )}
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 
   return (
@@ -370,52 +550,6 @@ export function App(): React.JSX.Element {
             <Text style={[styles.description, isDarkMode && styles.textMutedDark]}>
               {DEFAULT_STORY.description}
             </Text>
-
-            <View style={styles.modeBlock}>
-              <Text style={[styles.sectionLabel, isDarkMode && styles.textMutedDark]}>
-                {UI_STRINGS.readerModeLabel}
-              </Text>
-              <View style={styles.modeSelector}>
-                {(['pages', 'feed'] as const).map(mode => {
-                  const selected = readerMode === mode;
-                  const label =
-                    mode === 'pages'
-                      ? UI_STRINGS.readerModePages
-                      : UI_STRINGS.readerModeFeed;
-                  return (
-                    <Pressable
-                      accessibilityLabel={label}
-                      accessibilityRole="button"
-                      accessibilityState={{selected}}
-                      disabled={isBusy}
-                      key={mode}
-                      onPress={() => setReaderMode(mode)}
-                      style={({pressed}) => [
-                        styles.modeButton,
-                        isDarkMode && styles.modeButtonDark,
-                        selected && styles.modeButtonSelected,
-                        isDarkMode && selected && styles.modeButtonSelectedDark,
-                        pressed && styles.buttonPressed,
-                        isBusy && styles.disabled,
-                      ]}>
-                      <Text
-                        style={[
-                          styles.modeButtonText,
-                          isDarkMode && styles.textDark,
-                          selected && styles.modeButtonTextSelected,
-                        ]}>
-                        {label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-              <Text style={[styles.modeHint, isDarkMode && styles.textMutedDark]}>
-                {readerMode === 'pages'
-                  ? UI_STRINGS.readerModePagesHint
-                  : UI_STRINGS.readerModeFeedHint}
-              </Text>
-            </View>
 
             {notice ? (
               <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>{notice}</Text>
@@ -446,23 +580,6 @@ export function App(): React.JSX.Element {
                     {startActionLabel}
                   </Text>
                 </Pressable>
-                {hasStartedSession ? (
-                  <Pressable
-                    accessibilityLabel={UI_STRINGS.restart}
-                    accessibilityRole="button"
-                    disabled={isBusy}
-                    onPress={requestRestart}
-                    style={({pressed}) => [
-                      styles.secondaryButton,
-                      isDarkMode && styles.secondaryButtonDark,
-                      pressed && styles.buttonPressed,
-                      isBusy && styles.disabled,
-                    ]}>
-                    <Text style={[styles.secondaryButtonText, isDarkMode && styles.textDark]}>
-                      {UI_STRINGS.restart}
-                    </Text>
-                  </Pressable>
-                ) : null}
               </View>
             ) : null}
           </View>
@@ -470,9 +587,7 @@ export function App(): React.JSX.Element {
 
         {screen === 'reader' && snapshot ? (
           <View style={styles.screen}>
-            {renderHeader(
-              readerMode === 'pages' ? UI_STRINGS.readerModePages : UI_STRINGS.readerModeFeed,
-            )}
+            {renderHeader()}
             {notice ? (
               <Text style={[styles.readerNotice, isDarkMode && styles.noticeDark]}>{notice}</Text>
             ) : null}
@@ -483,20 +598,26 @@ export function App(): React.JSX.Element {
                   onLayout={(event: LayoutChangeEvent) => {
                     setPageHeight(event.nativeEvent.layout.height);
                   }}
-                  style={[
-                    styles.pageBody,
-                    isDarkMode && styles.storySurfaceDark,
-                  ]}>
-                  <Text
-                    onTextLayout={(event: TextLayoutEvent) => {
-                      const lines = event.nativeEvent.lines.map(line => line.text);
-                      setMeasuredLines(previous =>
-                        sameLines(previous, lines) ? previous : lines,
-                      );
-                    }}
-                    style={[styles.measureText, styles.storyPassage]}>
-                    {snapshot.text}
-                  </Text>
+                  style={styles.pageBody}>
+                  <View pointerEvents="none" style={styles.measureLayer}>
+                    {currentParagraphs.map((paragraph, paragraphIndex) => (
+                      <Text
+                        key={`measure-${paragraphIndex}`}
+                        onTextLayout={(event: TextLayoutEvent) => {
+                          const lines = event.nativeEvent.lines.map(line => line.text);
+                          setParagraphLines(previous => {
+                            const existing = previous[paragraphIndex] ?? [];
+                            if (sameLines(existing, lines)) {
+                              return previous;
+                            }
+                            return {...previous, [paragraphIndex]: lines};
+                          });
+                        }}
+                        style={styles.storyParagraph}>
+                        {indentParagraph(paragraph)}
+                      </Text>
+                    ))}
+                  </View>
 
                   {snapshot.choices.length > 0 ? (
                     <View
@@ -513,9 +634,16 @@ export function App(): React.JSX.Element {
                     </View>
                   ) : null}
 
-                  <Text style={[styles.storyPassage, isDarkMode && styles.textDark]}>
-                    {pageTexts[effectivePageIndex] ?? snapshot.text}
-                  </Text>
+                  <View style={styles.pageTextArea}>
+                    {(pages[effectivePageIndex]?.segments ?? []).map((segment, index) => (
+                      <Text
+                        key={`${segment.paragraphIndex}-${index}`}
+                        style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
+                        {segment.text}
+                      </Text>
+                    ))}
+                  </View>
+
                   {isChoicePage ? renderChoices() : null}
                 </View>
 
@@ -529,7 +657,7 @@ export function App(): React.JSX.Element {
                     }}
                     style={({pressed}) => [
                       styles.pageNavButton,
-                      isDarkMode && styles.secondaryButtonDark,
+                      isDarkMode && styles.pageNavButtonDark,
                       pressed && styles.buttonPressed,
                       (isBusy || effectivePageIndex === 0) && styles.disabled,
                     ]}>
@@ -539,21 +667,21 @@ export function App(): React.JSX.Element {
                   </Pressable>
 
                   <Text style={[styles.pageCounter, isDarkMode && styles.textMutedDark]}>
-                    {effectivePageIndex + 1}/{pageTexts.length}
+                    {effectivePageIndex + 1}/{pages.length}
                   </Text>
 
                   <Pressable
                     accessibilityLabel={UI_STRINGS.nextPage}
                     accessibilityRole="button"
-                    disabled={isBusy || effectivePageIndex >= pageTexts.length - 1}
+                    disabled={isBusy || effectivePageIndex >= pages.length - 1}
                     onPress={() => {
                       moveToPage(effectivePageIndex + 1);
                     }}
                     style={({pressed}) => [
                       styles.pageNavButton,
-                      isDarkMode && styles.secondaryButtonDark,
+                      isDarkMode && styles.pageNavButtonDark,
                       pressed && styles.buttonPressed,
-                      (isBusy || effectivePageIndex >= pageTexts.length - 1) && styles.disabled,
+                      (isBusy || effectivePageIndex >= pages.length - 1) && styles.disabled,
                     ]}>
                     <Text style={[styles.pageNavText, isDarkMode && styles.textDark]}>
                       {UI_STRINGS.nextPage} →
@@ -565,16 +693,12 @@ export function App(): React.JSX.Element {
               <ScrollView
                 contentContainerStyle={styles.readerContent}
                 style={styles.readerScroll}>
-                <View style={[styles.storySurface, isDarkMode && styles.storySurfaceDark]}>
+                <View style={styles.feedText}>
                   {snapshot.passages.map((passage, index) => (
                     <Text
                       key={`${index}-${passage.slice(0, 24)}`}
-                      style={[
-                        styles.storyPassage,
-                        index > 0 && styles.storyPassageSpacing,
-                        isDarkMode && styles.textDark,
-                      ]}>
-                      {passage}
+                      style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
+                      {indentParagraph(passage)}
                     </Text>
                   ))}
                 </View>
@@ -586,7 +710,7 @@ export function App(): React.JSX.Element {
 
         {screen === 'ending' && snapshot ? (
           <View style={styles.screen}>
-            {renderHeader(UI_STRINGS.endingLabel)}
+            {renderHeader()}
             <View style={styles.endingContent}>
               <Text style={[styles.endingId, isDarkMode && styles.textDark]}>
                 {snapshot.endingId ?? 'unknown'}
@@ -594,56 +718,127 @@ export function App(): React.JSX.Element {
               <Text style={[styles.finalTextLabel, isDarkMode && styles.textMutedDark]}>
                 {UI_STRINGS.finalTextLabel}
               </Text>
-              <View style={[styles.storySurface, isDarkMode && styles.storySurfaceDark]}>
-                <Text style={[styles.storyPassage, isDarkMode && styles.textDark]}>
-                  {snapshot.text}
+              {splitParagraphs(snapshot.text).map((paragraph, index) => (
+                <Text
+                  key={`ending-${index}`}
+                  style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
+                  {indentParagraph(paragraph)}
                 </Text>
-              </View>
+              ))}
               {notice ? (
                 <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>{notice}</Text>
               ) : null}
             </View>
           </View>
         ) : null}
+
+        {renderMenu()}
       </SafeAreaView>
     </SafeAreaProvider>
   );
 }
 
-function paginateMeasuredLines(
-  measuredLines: readonly string[],
+function splitParagraphs(text: string): string[] {
+  return text
+    .split(/\n\s*\n/g)
+    .map(paragraph => paragraph.replace(/\s+/g, ' ').trim())
+    .filter(paragraph => paragraph.length > 0);
+}
+
+function indentParagraph(paragraph: string): string {
+  return `${PARAGRAPH_INDENT}${paragraph.trim()}`;
+}
+
+function paginateParagraphs(
+  paragraphs: readonly string[],
+  measuredParagraphLines: Readonly<Record<number, readonly string[]>>,
   fallbackText: string,
   pageHeight: number,
   choiceHeight: number,
-): string[] {
-  if (measuredLines.length === 0 || pageHeight <= 0) {
-    return [fallbackText];
+): ReaderPage[] {
+  if (paragraphs.length === 0) {
+    return [{segments: [{paragraphIndex: 0, text: fallbackText}]}];
+  }
+
+  const fullyMeasured = paragraphs.every(
+    (_paragraph, index) => (measuredParagraphLines[index]?.length ?? 0) > 0,
+  );
+
+  if (!fullyMeasured || pageHeight <= 0) {
+    return [
+      {
+        segments: paragraphs.map((paragraph, paragraphIndex) => ({
+          paragraphIndex,
+          text: indentParagraph(paragraph),
+        })),
+      },
+    ];
+  }
+
+  const lines: MeasuredLine[] = [];
+  paragraphs.forEach((_paragraph, paragraphIndex) => {
+    const measuredLines = measuredParagraphLines[paragraphIndex] ?? [];
+    measuredLines.forEach((text, lineIndex) => {
+      lines.push({paragraphIndex, lineIndex, text});
+    });
+  });
+
+  if (lines.length === 0) {
+    return [{segments: [{paragraphIndex: 0, text: fallbackText}]}];
   }
 
   const contentHeight = Math.max(STORY_LINE_HEIGHT, pageHeight - PAGE_VERTICAL_PADDING);
   const normalCapacity = Math.max(1, Math.floor(contentHeight / STORY_LINE_HEIGHT));
-  const choiceCapacity =
-    choiceHeight > 0
-      ? Math.max(
-          1,
-          Math.floor((contentHeight - choiceHeight - PAGE_GAP) / STORY_LINE_HEIGHT),
-        )
-      : normalCapacity;
 
-  if (measuredLines.length <= choiceCapacity) {
-    return [measuredLines.join('\n')];
+  if (choiceHeight <= 0) {
+    return chunkLines(lines, normalCapacity).map(linePage => ({
+      segments: linesToSegments(linePage),
+    }));
   }
 
-  const pages: string[] = [];
-  const finalStart = Math.max(0, measuredLines.length - choiceCapacity);
-  const prefix = measuredLines.slice(0, finalStart);
+  const choiceCapacity = Math.max(
+    1,
+    Math.floor((contentHeight - choiceHeight - PAGE_GAP) / STORY_LINE_HEIGHT),
+  );
+  const linePages: MeasuredLine[][] = [];
+  let cursor = 0;
 
-  for (let index = 0; index < prefix.length; index += normalCapacity) {
-    pages.push(prefix.slice(index, index + normalCapacity).join('\n'));
+  while (lines.length - cursor > choiceCapacity) {
+    const remaining = lines.length - cursor;
+    const take = Math.min(normalCapacity, Math.max(1, remaining - 1));
+    linePages.push(lines.slice(cursor, cursor + take));
+    cursor += take;
   }
 
-  pages.push(measuredLines.slice(finalStart).join('\n'));
-  return pages;
+  linePages.push(lines.slice(cursor));
+  return linePages.map(linePage => ({segments: linesToSegments(linePage)}));
+}
+
+function chunkLines(lines: readonly MeasuredLine[], capacity: number): MeasuredLine[][] {
+  const pages: MeasuredLine[][] = [];
+  for (let index = 0; index < lines.length; index += capacity) {
+    pages.push(lines.slice(index, index + capacity));
+  }
+  return pages.length > 0 ? pages : [[]];
+}
+
+function linesToSegments(lines: readonly MeasuredLine[]): PageSegment[] {
+  const segments: PageSegment[] = [];
+
+  for (const line of lines) {
+    const previous = segments[segments.length - 1];
+    if (previous?.paragraphIndex === line.paragraphIndex) {
+      segments[segments.length - 1] = {
+        paragraphIndex: previous.paragraphIndex,
+        text: `${previous.text} ${line.text}`.trim(),
+      };
+      continue;
+    }
+
+    segments.push({paragraphIndex: line.paragraphIndex, text: line.text});
+  }
+
+  return segments;
 }
 
 function sameLines(left: readonly string[], right: readonly string[]): boolean {
@@ -671,25 +866,6 @@ const styles = StyleSheet.create({
   title: {fontSize: 30, lineHeight: 36, fontWeight: '700', color: '#111111'},
   status: {fontSize: 13, lineHeight: 18, color: '#666666'},
   description: {fontSize: 16, lineHeight: 23, color: '#555555'},
-  modeBlock: {gap: 8},
-  sectionLabel: {fontSize: 13, lineHeight: 18, fontWeight: '600', color: '#666666'},
-  modeSelector: {flexDirection: 'row', gap: 8},
-  modeButton: {
-    flex: 1,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#cccccc',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-  },
-  modeButtonDark: {borderColor: '#555555'},
-  modeButtonSelected: {borderWidth: 2, borderColor: '#111111'},
-  modeButtonSelectedDark: {borderColor: '#ffffff'},
-  modeButtonText: {fontSize: 15, lineHeight: 20, color: '#222222'},
-  modeButtonTextSelected: {fontWeight: '700'},
-  modeHint: {fontSize: 13, lineHeight: 18, color: '#666666'},
   notice: {
     borderRadius: 8,
     padding: 10,
@@ -718,40 +894,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   primaryButtonTextDark: {color: '#111111'},
-  secondaryButton: {
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#cccccc',
-    paddingHorizontal: 18,
-  },
-  secondaryButtonDark: {borderColor: '#555555'},
-  secondaryButtonText: {fontSize: 15, lineHeight: 21, color: '#222222'},
   buttonPressed: {opacity: 0.65},
-  disabled: {opacity: 0.4},
+  disabled: {opacity: 0.38},
   readerHeader: {
-    minHeight: 52,
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e4e4e4',
+    paddingLeft: 20,
+    paddingRight: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#dddddd',
   },
-  headerDark: {borderBottomColor: '#333333'},
+  headerDark: {borderBottomColor: '#2f2f2f'},
   readerTitle: {fontSize: 15, lineHeight: 20, fontWeight: '600', color: '#222222'},
   menuButton: {
-    width: 44,
-    minHeight: 44,
+    width: 48,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
   menuButtonText: {fontSize: 28, lineHeight: 30, color: '#222222'},
   readerNotice: {
-    marginHorizontal: 16,
-    marginTop: 10,
+    marginHorizontal: 20,
+    marginTop: 8,
     borderRadius: 8,
     padding: 9,
     backgroundColor: '#f4f4f4',
@@ -759,79 +925,164 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  pageReaderContent: {flex: 1, padding: 16, gap: 10},
+  pageReaderContent: {flex: 1, paddingHorizontal: 20, paddingTop: 10},
   pageBody: {
     flex: 1,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 14,
-    padding: 18,
-    backgroundColor: '#fafafa',
+    paddingVertical: PAGE_VERTICAL_PADDING / 2,
     gap: PAGE_GAP,
   },
-  measureText: {
+  pageTextArea: {flexShrink: 1},
+  measureLayer: {
     position: 'absolute',
-    left: 18,
-    right: 18,
-    top: 18,
+    left: 0,
+    right: 0,
+    top: PAGE_VERTICAL_PADDING / 2,
     opacity: 0,
   },
   measureChoices: {
     position: 'absolute',
-    left: 18,
-    right: 18,
-    bottom: 18,
+    left: 0,
+    right: 0,
+    bottom: PAGE_VERTICAL_PADDING / 2,
     opacity: 0,
     gap: 8,
   },
   pageFooter: {
-    minHeight: 48,
+    minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
+    paddingBottom: 6,
   },
   pageNavButton: {
     minHeight: 44,
-    minWidth: 112,
+    minWidth: 108,
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#cccccc',
-    paddingHorizontal: 12,
-  },
-  pageNavText: {fontSize: 14, lineHeight: 20, fontWeight: '600', color: '#222222'},
-  pageCounter: {fontSize: 13, lineHeight: 18, color: '#666666', textAlign: 'center'},
-  readerScroll: {flex: 1},
-  readerContent: {padding: 16, gap: 16, paddingBottom: 28},
-  storySurface: {
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 14,
-    padding: 18,
-    backgroundColor: '#fafafa',
-  },
-  storySurfaceDark: {borderColor: '#333333', backgroundColor: '#1b1b1b'},
-  storyPassage: {fontSize: 18, lineHeight: STORY_LINE_HEIGHT, color: '#171717'},
-  storyPassageSpacing: {marginTop: 18},
-  choicesZone: {gap: 8},
-  choice: {
-    minHeight: 52,
     justifyContent: 'center',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#cfcfcf',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    borderColor: '#d0d0d0',
+    paddingHorizontal: 12,
+  },
+  pageNavButtonDark: {borderColor: '#444444'},
+  pageNavText: {fontSize: 14, lineHeight: 20, fontWeight: '600', color: '#222222'},
+  pageCounter: {fontSize: 13, lineHeight: 18, color: '#666666', textAlign: 'center'},
+  readerScroll: {flex: 1},
+  readerContent: {paddingHorizontal: 20, paddingTop: 14, paddingBottom: 28, gap: 18},
+  feedText: {gap: 0},
+  storyParagraph: {
+    fontSize: 18,
+    lineHeight: STORY_LINE_HEIGHT,
+    color: '#171717',
+    textAlign: 'justify',
+    includeFontPadding: false,
+  },
+  choicesZone: {gap: 8},
+  choice: {
+    minHeight: 50,
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     backgroundColor: '#ffffff',
   },
-  choiceDark: {borderColor: '#444444', backgroundColor: '#1a1a1a'},
+  choiceDark: {borderColor: '#444444', backgroundColor: '#171717'},
   choiceText: {fontSize: 16, lineHeight: 22, color: '#222222'},
-  endingContent: {flex: 1, justifyContent: 'center', padding: 24, gap: 12},
+  endingContent: {flex: 1, justifyContent: 'center', paddingHorizontal: 24, gap: 8},
   endingId: {fontSize: 26, lineHeight: 32, fontWeight: '700', color: '#111111'},
-  finalTextLabel: {fontSize: 13, lineHeight: 18, color: '#666666'},
+  finalTextLabel: {fontSize: 13, lineHeight: 18, color: '#666666', marginBottom: 6},
+  menuBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.48)',
+  },
+  menuSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 24,
+    backgroundColor: '#ffffff',
+    gap: 14,
+  },
+  menuSheetDark: {backgroundColor: '#1a1a1a'},
+  menuGrabber: {
+    width: 42,
+    height: 4,
+    alignSelf: 'center',
+    borderRadius: 999,
+    backgroundColor: '#b8b8b8',
+  },
+  menuHeadingBlock: {gap: 8, paddingTop: 8},
+  menuTitle: {fontSize: 22, lineHeight: 28, fontWeight: '700', color: '#171717'},
+  menuDescription: {fontSize: 15, lineHeight: 21, color: '#666666'},
+  menuSection: {gap: 8},
+  menuSectionLabel: {fontSize: 13, lineHeight: 18, fontWeight: '600', color: '#666666'},
+  modeSelector: {flexDirection: 'row', gap: 8},
+  modeButton: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
+  },
+  modeButtonDark: {borderColor: '#444444'},
+  modeButtonSelected: {borderColor: '#111111', backgroundColor: '#f1f1f1'},
+  modeButtonSelectedDark: {borderColor: '#eeeeee', backgroundColor: '#2b2b2b'},
+  modeButtonText: {fontSize: 15, lineHeight: 20, color: '#222222'},
+  modeButtonTextSelected: {fontWeight: '700'},
+  menuDivider: {height: StyleSheet.hairlineWidth, backgroundColor: '#d8d8d8'},
+  menuRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+  },
+  menuRowPressed: {backgroundColor: 'rgba(127, 127, 127, 0.12)'},
+  menuRowIcon: {width: 24, fontSize: 21, color: '#222222', textAlign: 'center'},
+  menuRowText: {fontSize: 16, lineHeight: 22, color: '#222222'},
+  menuDangerIcon: {width: 24, fontSize: 22, color: '#c62828', textAlign: 'center'},
+  menuDangerText: {fontSize: 16, lineHeight: 22, color: '#c62828'},
+  menuCloseButton: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#f2f2f2',
+  },
+  menuSecondaryAction: {
+    flex: 1,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#f2f2f2',
+  },
+  menuSecondaryActionDark: {backgroundColor: '#2c2c2c'},
+  menuDangerAction: {
+    flex: 1,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#c62828',
+  },
+  menuActionText: {fontSize: 15, lineHeight: 20, fontWeight: '600', color: '#222222'},
+  menuDangerActionText: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  confirmActions: {flexDirection: 'row', gap: 10, marginTop: 4},
   textDark: {color: '#f3f3f3'},
   textMutedDark: {color: '#b8b8b8'},
 });
