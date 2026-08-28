@@ -30,16 +30,19 @@ function YandexBanner({
   const [adSize, setAdSize] = useState<BannerAdSize | null>(null);
   const [loadState, setLoadState] = useState<BannerLoadState>('loading');
   const bannerWidth = Math.max(1, Math.floor(width));
-  const reservedHeight = Math.max(
-    ADS_CONFIG.bannerLayout.minHeight,
-    Math.ceil(height * ADS_CONFIG.bannerLayout.heightRatio),
+  const reservedHeight = Math.min(
+    ADS_CONFIG.bannerLayout.maxHeight,
+    Math.max(
+      ADS_CONFIG.bannerLayout.minHeight,
+      Math.ceil(height * ADS_CONFIG.bannerLayout.heightRatio),
+    ),
   );
 
   useEffect(() => {
     let active = true;
     setLoadState('loading');
 
-    BannerAdSize.stickySize(bannerWidth)
+    BannerAdSize.inlineSize(bannerWidth, reservedHeight)
       .then(size => {
         if (active) {
           setAdSize(size);
@@ -48,14 +51,14 @@ function YandexBanner({
       .catch((error: unknown) => {
         if (active) {
           setLoadState('failed');
-          logAdsError('Failed to calculate sticky banner size.', error);
+          logAdsError('Failed to calculate inline banner size.', error);
         }
       });
 
     return () => {
       active = false;
     };
-  }, [bannerWidth]);
+  }, [bannerWidth, reservedHeight]);
 
   const isVisible = visible && loadState !== 'failed';
 
