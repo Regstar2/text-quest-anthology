@@ -9,9 +9,9 @@ export const STORY_MANIFEST = [
     metadata: {
       id: 'zavalinka',
       schemaVersion: 1,
-      contentVersion: 1,
+      contentVersion: 3,
       title: 'Завалинка',
-      description: 'Технический placeholder первой истории для проверки story package pipeline.',
+      description: 'Расширенная техническая история для проверки постраничного и ленточного reader flow.',
       cover: 'assets/cover.webp',
     },
     compiledStory: story0 as InkStoryContent,
