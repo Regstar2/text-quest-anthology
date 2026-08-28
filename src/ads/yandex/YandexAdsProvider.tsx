@@ -35,7 +35,7 @@ function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element {
           setAdSize(size);
         }
       })
-      .catch(error => {
+      .catch((error: unknown) => {
         if (active) {
           logAdsError('Failed to calculate sticky banner size.', error);
         }
@@ -86,7 +86,7 @@ export class YandexAdsProvider implements AdsProvider {
         this.isInitialized = true;
         return this.preloadInterstitial();
       })
-      .catch(error => {
+      .catch((error: unknown) => {
         this.isInitialized = false;
         this.initializationPromise = null;
         logAdsError('SDK initialization failed.', error);
@@ -160,7 +160,7 @@ export class YandexAdsProvider implements AdsProvider {
       };
 
       try {
-        Promise.resolve(ad.show()).catch(error => {
+        Promise.resolve(ad.show()).catch((error: unknown) => {
           logAdsError('Interstitial show request failed.', error);
           finish('failed');
         });
