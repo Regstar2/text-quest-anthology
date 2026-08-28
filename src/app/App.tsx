@@ -34,6 +34,7 @@ const PAGE_VERTICAL_PADDING = 12;
 const PAGINATION_SAFETY_LINES = 2;
 const MIN_CHOICE_PAGE_LINES = 3;
 const PARAGRAPH_INDENT = '\u2003\u2003';
+const EMPTY_PARAGRAPH_LINES: Readonly<Record<number, readonly string[]>> = {};
 
 type AppScreen = 'start' | 'reader' | 'ending';
 type ReaderMode = 'pages' | 'feed';
@@ -67,7 +68,7 @@ if (!DEFAULT_STORY) {
 const DEFAULT_STORY_PACKAGE = storyLoader.load(DEFAULT_STORY.id);
 const EMPTY_MEASUREMENT: ReaderMeasurement = {
   key: '',
-  paragraphLines: {},
+  paragraphLines: EMPTY_PARAGRAPH_LINES,
   choiceHeight: 0,
 };
 
@@ -338,7 +339,9 @@ export function App(): React.JSX.Element {
   );
 
   const activeParagraphLines =
-    measurement.key === measurementKey ? measurement.paragraphLines : {};
+    measurement.key === measurementKey
+      ? measurement.paragraphLines
+      : EMPTY_PARAGRAPH_LINES;
   const activeChoiceHeight =
     measurement.key === measurementKey ? measurement.choiceHeight : 0;
 
@@ -391,7 +394,7 @@ export function App(): React.JSX.Element {
       const current: ReaderMeasurement =
         previous.key === callbackKey
           ? previous
-          : {key: callbackKey, paragraphLines: {}, choiceHeight: 0};
+          : {key: callbackKey, paragraphLines: EMPTY_PARAGRAPH_LINES, choiceHeight: 0};
       const existing = current.paragraphLines[paragraphIndex] ?? [];
 
       if (sameLines(existing, lines)) {
@@ -417,7 +420,7 @@ export function App(): React.JSX.Element {
       const current: ReaderMeasurement =
         previous.key === callbackKey
           ? previous
-          : {key: callbackKey, paragraphLines: {}, choiceHeight: 0};
+          : {key: callbackKey, paragraphLines: EMPTY_PARAGRAPH_LINES, choiceHeight: 0};
 
       if (current.choiceHeight === height) {
         return current;
