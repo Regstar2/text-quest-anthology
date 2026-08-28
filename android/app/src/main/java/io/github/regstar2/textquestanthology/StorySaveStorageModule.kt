@@ -1,12 +1,14 @@
 package io.github.regstar2.textquestanthology
 
 import android.content.Context
+import android.view.View
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.uimanager.ReactShadowNode
 import com.facebook.react.uimanager.ViewManager
 
 private const val STORAGE_NAME = "story_saves"
@@ -84,9 +86,10 @@ class StorySaveStorageModule(
 class StorySavePackage : ReactPackage {
     override fun createNativeModules(
         reactContext: ReactApplicationContext,
-    ): List<NativeModule> = listOf(StorySaveStorageModule(reactContext))
+    ): MutableList<NativeModule> =
+        listOf(StorySaveStorageModule(reactContext)).toMutableList()
 
     override fun createViewManagers(
         reactContext: ReactApplicationContext,
-    ): List<ViewManager<*, *>> = emptyList()
+    ): MutableList<ViewManager<View, ReactShadowNode<*>>> = mutableListOf()
 }
