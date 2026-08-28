@@ -63,6 +63,7 @@ export function App(): React.JSX.Element {
   const mutationLockRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
   const measurementKeyRef = useRef('');
+  const pageOrdinalRef = useRef(1);
   const feedChoiceCountRef = useRef(0);
 
   const storyMetadata = useMemo(() => storyLoader.listMetadata(), []);
@@ -79,12 +80,15 @@ export function App(): React.JSX.Element {
   const [hasStartedSession, setHasStartedSession] = useState(false);
   const [pageHeight, setPageHeight] = useState(0);
   const [readerRevision, setReaderRevision] = useState(0);
+  const [pageBannerVisible, setPageBannerVisible] = useState(false);
   const [feedBannerVisible, setFeedBannerVisible] = useState(false);
   const [measurement, setMeasurement] =
     useState<ReaderMeasurement>(EMPTY_MEASUREMENT);
 
   const resetReaderAdCadence = (): void => {
+    pageOrdinalRef.current = 1;
     feedChoiceCountRef.current = 0;
+    setPageBannerVisible(false);
     setFeedBannerVisible(false);
   };
 
@@ -151,7 +155,9 @@ export function App(): React.JSX.Element {
 
     sessionRef.current = null;
     hasStartedSessionRef.current = false;
+    pageOrdinalRef.current = 1;
     feedChoiceCountRef.current = 0;
+    setPageBannerVisible(false);
     setFeedBannerVisible(false);
     setHasStartedSession(false);
     setActiveStory(null);
@@ -287,10 +293,22 @@ export function App(): React.JSX.Element {
       return;
     }
 
+    const previousPageIndex = snapshot?.pageIndex ?? 0;
+
     try {
       const result = await session.setPage(pageIndex);
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
+
+      if (readerMode === 'pages') {
+        pageOrdinalRef.current = Math.max(
+          1,
+          pageOrdinalRef.current + pageIndex - previousPageIndex,
+        );
+        setPageBannerVisible(
+          pageOrdinalRef.current % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0,
+        );
+      }
     } catch {
       setNotice(UI_STRINGS.storyActionFailed);
     } finally {
@@ -312,7 +330,12 @@ export function App(): React.JSX.Element {
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
 
-      if (readerMode === 'feed') {
+      if (readerMode === 'pages') {
+        pageOrdinalRef.current += 1;
+        setPageBannerVisible(
+          pageOrdinalRef.current % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0,
+        );
+      } else {
         const nextChoiceCount = feedChoiceCountRef.current + 1;
         feedChoiceCountRef.current = nextChoiceCount;
         setFeedBannerVisible(
@@ -374,7 +397,13 @@ export function App(): React.JSX.Element {
 
   const changeReaderMode = (mode: ReaderMode) => {
     if (mode === 'pages' && readerMode !== 'pages') {
+      pageOrdinalRef.current = 1;
+      setPageBannerVisible(false);
       setReaderRevision(previous => previous + 1);
+    }
+    if (mode === 'feed' && readerMode !== 'feed') {
+      feedChoiceCountRef.current = 0;
+      setFeedBannerVisible(false);
     }
     setReaderMode(mode);
     setMenuView(null);
@@ -425,10 +454,7 @@ export function App(): React.JSX.Element {
   );
   const showReaderBanner =
     screen === 'reader' &&
-    (readerMode === 'pages'
-      ? measurementReady &&
-        (effectivePageIndex + 1) % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0
-      : feedBannerVisible);
+    (readerMode === 'pages' ? pageBannerVisible : feedBannerVisible);
 
   const recordMeasuredLines = (
     callbackKey: string,
@@ -660,7 +686,7 @@ export function App(): React.JSX.Element {
     <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <SafeAreaView style={[styles.safeArea, isDarkMode && styles.safeAreaDark]}>
-        {showReaderBanner ? <AdsBanner isDarkMode={isDarkMode} /> : null}
+        <AdsBanner isDarkMode={isDarkMode} visible={showReaderBanner} />
 
         {screen === 'main' ? (
           <View style={styles.screen}>
