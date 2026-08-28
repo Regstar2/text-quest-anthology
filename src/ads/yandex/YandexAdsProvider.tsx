@@ -55,7 +55,7 @@ function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element {
       accessibilityLabel="Реклама"
       style={[
         styles.bannerSlot,
-        {height: reservedHeight},
+        {minHeight: reservedHeight},
         isDarkMode && styles.bannerSlotDark,
       ]}>
       {adSize ? (
@@ -207,7 +207,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#f3f4f6',
     justifyContent: 'center',
-    overflow: 'hidden',
     width: '100%',
   },
   bannerSlotDark: {
