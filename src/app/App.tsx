@@ -31,7 +31,7 @@ const AdsBanner = adsProvider.Banner;
 const STORY_LINE_HEIGHT = 28;
 const PAGE_GAP = 12;
 const PAGE_VERTICAL_PADDING = 12;
-const PAGINATION_SAFETY_LINES = 2;
+const PAGINATION_SAFETY_LINES = 3;
 const MIN_CHOICE_PAGE_LINES = 3;
 const CHOICE_ROW_RESERVE = 72;
 const CHOICE_GAP = 8;
@@ -360,11 +360,16 @@ export function App(): React.JSX.Element {
       return;
     }
 
+    const normalizedLines = lines.map(normalizeMeasuredLine);
+
     setMeasurement(previous => {
-      if (previous.key === callbackKey && sameLines(previous.lines, lines)) {
+      if (
+        previous.key === callbackKey &&
+        sameLines(previous.lines, normalizedLines)
+      ) {
         return previous;
       }
-      return {key: callbackKey, lines};
+      return {key: callbackKey, lines: normalizedLines};
     });
   };
 
@@ -787,6 +792,10 @@ function splitParagraphs(text: string): string[] {
 
 function indentParagraph(paragraph: string): string {
   return `${PARAGRAPH_INDENT}${paragraph.trim()}`;
+}
+
+function normalizeMeasuredLine(line: string): string {
+  return line.replace(/[\r\n]/g, '').split(ZERO_WIDTH_SPACE).join('');
 }
 
 function getChoiceReserve(choiceCount: number): number {
