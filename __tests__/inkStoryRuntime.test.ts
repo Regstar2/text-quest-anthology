@@ -47,12 +47,13 @@ describe('InkStoryRuntime packaged story', () => {
 
     expect(stayBed.isEnded).toBe(false);
     expect(stayBed.choices).toHaveLength(2);
+    expect(stayBed.text).toContain('скребущий звук');
 
     const result = runtime.choose(stayBed.choices[1].index);
     expect(result.isEnded).toBe(true);
     expect(result.choices).toHaveLength(0);
     expect(result.endingId).toBe('ending_light');
-    expect(result.text).toContain('Яркая прихожая');
+    expect(result.text).toContain('включаешь свет');
   });
 
   test('Ink state is serializable and can be restored before a choice', () => {

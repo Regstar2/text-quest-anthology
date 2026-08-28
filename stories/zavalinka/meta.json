@@ -1,7 +1,7 @@
 {
   "id": "zavalinka",
   "schemaVersion": 1,
-  "contentVersion": 2,
+  "contentVersion": 3,
   "title": "Завалинка",
   "description": "Расширенная техническая история для проверки постраничного и ленточного reader flow.",
   "cover": "assets/cover.webp"
