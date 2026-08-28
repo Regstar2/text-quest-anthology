@@ -8,6 +8,8 @@ export const UI_STRINGS = {
   viewEnding: 'Посмотреть концовку',
   menu: 'Меню',
   returnToStart: 'На стартовый экран',
+  endingRestart: 'Начать сначала',
+  endingMenu: 'В меню',
   exitStory: 'Выйти из истории',
   choicesLabel: 'Варианты выбора',
   readerModeLabel: 'Режим чтения',
