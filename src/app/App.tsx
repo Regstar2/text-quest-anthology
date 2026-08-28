@@ -11,8 +11,7 @@ import {
   View,
   type AppStateStatus,
   type LayoutChangeEvent,
-  type NativeSyntheticEvent,
-  type TextLayoutEventData,
+  type TextLayoutEvent,
   useColorScheme,
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
@@ -31,6 +30,7 @@ const DEFAULT_STORY = storyLoader.listMetadata()[0];
 const AdsBanner = adsProvider.Banner;
 const STORY_LINE_HEIGHT = 28;
 const PAGE_GAP = 14;
+const PAGE_VERTICAL_PADDING = 36;
 
 type AppScreen = 'start' | 'reader' | 'ending';
 type ReaderMode = 'pages' | 'feed';
@@ -488,7 +488,7 @@ export function App(): React.JSX.Element {
                     isDarkMode && styles.storySurfaceDark,
                   ]}>
                   <Text
-                    onTextLayout={(event: NativeSyntheticEvent<TextLayoutEventData>) => {
+                    onTextLayout={(event: TextLayoutEvent) => {
                       const lines = event.nativeEvent.lines.map(line => line.text);
                       setMeasuredLines(previous =>
                         sameLines(previous, lines) ? previous : lines,
@@ -620,12 +620,13 @@ function paginateMeasuredLines(
     return [fallbackText];
   }
 
-  const normalCapacity = Math.max(1, Math.floor(pageHeight / STORY_LINE_HEIGHT));
+  const contentHeight = Math.max(STORY_LINE_HEIGHT, pageHeight - PAGE_VERTICAL_PADDING);
+  const normalCapacity = Math.max(1, Math.floor(contentHeight / STORY_LINE_HEIGHT));
   const choiceCapacity =
     choiceHeight > 0
       ? Math.max(
           1,
-          Math.floor((pageHeight - choiceHeight - PAGE_GAP) / STORY_LINE_HEIGHT),
+          Math.floor((contentHeight - choiceHeight - PAGE_GAP) / STORY_LINE_HEIGHT),
         )
       : normalCapacity;
 
