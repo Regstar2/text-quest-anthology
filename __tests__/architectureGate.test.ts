@@ -1,8 +1,15 @@
-import {readFileSync} from 'node:fs';
-import {join} from 'node:path';
+const fs = jest.requireActual('fs') as {
+  readFileSync(path: string, encoding: 'utf8'): string;
+};
+const pathModule = jest.requireActual('path') as {
+  join(...paths: string[]): string;
+};
+const processModule = jest.requireActual('process') as {
+  cwd(): string;
+};
 
 function source(path: string): string {
-  return readFileSync(join(process.cwd(), path), 'utf8');
+  return fs.readFileSync(pathModule.join(processModule.cwd(), path), 'utf8');
 }
 
 describe('v0.1.7 architecture gate', () => {
