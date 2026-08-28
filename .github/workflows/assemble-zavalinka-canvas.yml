@@ -22,7 +22,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p stories/zavalinka/design
-          base64 -d stories/zavalinka/design/.canvas-upload/final.canvas.gz.b64 \
+          cat \
+            stories/zavalinka/design/.canvas-upload/part00.b64 \
+            stories/zavalinka/design/.canvas-upload/part01.b64 \
+            stories/zavalinka/design/.canvas-upload/part02.b64 \
+            stories/zavalinka/design/.canvas-upload/part03.b64 \
+            | base64 -d \
             | gzip -d \
             > stories/zavalinka/design/zavalinka-decision-map.canvas
           echo "0f9f6c18a78ba22e5844bfbb41078a44816c1c2c29d5ef3517945836ab5bd098  stories/zavalinka/design/zavalinka-decision-map.canvas" | sha256sum -c -
