@@ -5,6 +5,7 @@ export type AdShowResult = 'success' | 'unavailable' | 'failed';
 
 export interface AdsBannerProps {
   isDarkMode: boolean;
+  visible: boolean;
 }
 
 export interface AdsProvider {
