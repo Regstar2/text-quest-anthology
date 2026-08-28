@@ -231,7 +231,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'transparent',
     justifyContent: 'center',
-    overflow: 'hidden',
     width: '100%',
     zIndex: 20,
   },
