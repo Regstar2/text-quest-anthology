@@ -1,0 +1,33 @@
+name: v0.1.6 temporary verification
+
+on:
+  push:
+    branches:
+      - feature/v0.1.6-zavalinka-vertical-slice
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - name: Commit generated story artifacts
+        shell: bash
+        run: |
+          if git diff --quiet -- src/stories/generated; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/stories/generated
+          git commit -m "chore: regenerate story artifacts"
+          git push origin HEAD:feature/v0.1.6-zavalinka-vertical-slice

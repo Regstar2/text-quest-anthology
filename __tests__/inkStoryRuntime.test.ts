@@ -22,42 +22,77 @@ function startStory(): {
   };
 }
 
+function chooseByText(
+  runtime: InkStoryRuntime,
+  snapshot: InkRuntimeSnapshot,
+  textStart: string,
+): InkRuntimeSnapshot {
+  const choice = snapshot.choices.find(item => item.text.startsWith(textStart));
+  if (!choice) {
+    throw new Error(`Expected choice starting with "${textStart}".`);
+  }
+  return runtime.choose(choice.index);
+}
+
 describe('InkStoryRuntime packaged story', () => {
-  test('first branch reaches a second decision and then ending_eye', () => {
+  test('prepared route exposes the delayed pipe choice and reaches the attic-dawn ending', () => {
     const {runtime, snapshot} = startStory();
 
     expect(snapshot.isEnded).toBe(false);
     expect(snapshot.choices).toHaveLength(2);
+    expect(snapshot.text).toContain('Ливень начался не сразу');
 
-    const nearDoor = runtime.choose(snapshot.choices[0].index);
-    expect(nearDoor.isEnded).toBe(false);
-    expect(nearDoor.choices).toHaveLength(3);
-    expect(nearDoor.text).toContain('прихожей');
+    let current = chooseByText(runtime, snapshot, 'Сначала обойти дом');
+    current = chooseByText(runtime, current, 'Осмотреть дом тщательно');
+    current = chooseByText(runtime, current, 'Укрепить вход');
 
-    const result = runtime.choose(nearDoor.choices[0].index);
+    expect(current.choices.map(choice => choice.text)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('сразу подняться на подготовленный чердак'),
+      ]),
+    );
+
+    current = chooseByText(runtime, current, 'Не подходить к окну');
+    expect(current.choices.map(choice => choice.text)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Сразу заблокировать маленькое окно'),
+      ]),
+    );
+
+    const result = chooseByText(runtime, current, 'Сразу заблокировать');
     expect(result.isEnded).toBe(true);
     expect(result.choices).toHaveLength(0);
-    expect(result.endingId).toBe('ending_eye');
-    expect(result.text).toContain('мутный глаз');
+    expect(result.endingId).toBe('e7_attic_dawn');
+    expect(result.text).toContain('К рассвету');
   });
 
-  test('second initial branch reaches ending_light', () => {
+  test('direct-entry route cannot use unknown pipe knowledge and reaches the glass ending', () => {
     const {runtime, snapshot} = startStory();
-    const stayBed = runtime.choose(snapshot.choices[1].index);
 
-    expect(stayBed.isEnded).toBe(false);
-    expect(stayBed.choices).toHaveLength(2);
-    expect(stayBed.text).toContain('скребущий звук');
+    let current = chooseByText(runtime, snapshot, 'Зайти в дом сразу');
+    current = chooseByText(runtime, current, 'Осмотреть дом тщательно');
+    current = chooseByText(runtime, current, 'Укрепить вход');
+    current = chooseByText(runtime, current, 'Не подходить к окну');
 
-    const result = runtime.choose(stayBed.choices[1].index);
+    expect(
+      current.choices.some(choice =>
+        choice.text.startsWith('Сразу заблокировать маленькое окно'),
+      ),
+    ).toBe(false);
+
+    const result = chooseByText(runtime, current, 'Остаться у люка');
     expect(result.isEnded).toBe(true);
-    expect(result.choices).toHaveLength(0);
-    expect(result.endingId).toBe('ending_light');
-    expect(result.text).toContain('включаешь свет');
+    expect(result.endingId).toBe('e12_glass');
+    expect(result.text).toContain('Третий удар выбивает стекло');
   });
 
-  test('Ink state is serializable and can be restored before a choice', () => {
+  test('Ink state is serializable and can be restored after an early flag-setting choice', () => {
     const {runtime, snapshot} = startStory();
+    const afterPipeCheck = chooseByText(
+      runtime,
+      snapshot,
+      'Сначала обойти дом',
+    );
     const serializedState = runtime.exportState();
 
     expect(() => JSON.parse(serializedState)).not.toThrow();
@@ -66,10 +101,7 @@ describe('InkStoryRuntime packaged story', () => {
     const restoredRuntime = new InkStoryRuntime(restoredStory.compiledStory);
     const restoredSnapshot = restoredRuntime.importState(serializedState);
 
-    expect(restoredSnapshot.choices).toEqual(snapshot.choices);
-
-    const result = restoredRuntime.choose(restoredSnapshot.choices[1].index);
-    expect(result.isEnded).toBe(false);
-    expect(result.choices).toHaveLength(2);
+    expect(restoredSnapshot.choices).toEqual(afterPipeCheck.choices);
+    expect(restoredSnapshot.text).toBe(afterPipeCheck.text);
   });
 });

@@ -11,7 +11,7 @@ describe('StoryLoader', () => {
       expect.objectContaining({
         id: 'zavalinka',
         schemaVersion: 1,
-        contentVersion: 3,
+        contentVersion: 4,
         title: 'Завалинка',
       }),
     );
@@ -50,6 +50,7 @@ describe('StoryLoader', () => {
     const snapshot = runtime.continueToChoiceOrEnd();
 
     expect(snapshot.choices).toHaveLength(2);
+    expect(snapshot.text).toContain('Ливень начался не сразу');
   });
 
   test('rejects unknown story ids explicitly', () => {

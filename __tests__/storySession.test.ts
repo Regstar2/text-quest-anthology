@@ -45,8 +45,8 @@ describe('StorySession persistence flow', () => {
     expect(opened.resumed).toBe(false);
     expect(opened.snapshot.pageIndex).toBe(0);
     expect(opened.snapshot.choices).toHaveLength(2);
-    expect(opened.snapshot.text).toContain('Ночь. В квартире темно');
-    expect(opened.snapshot.text).toContain('закрывает глазок собой');
+    expect(opened.snapshot.text).toContain('Ливень начался не сразу');
+    expect(opened.snapshot.text).toContain('маленький Г-образный дом');
   });
 
   test('page index and full current text survive cold resume', async () => {
@@ -88,30 +88,40 @@ describe('StorySession persistence flow', () => {
     const initialPassageCount = opened.snapshot.passages.length;
 
     const result = await opened.session.choose(
-      findChoice(opened.snapshot, 'Подойти к двери'),
+      findChoice(opened.snapshot, 'Зайти в дом сразу'),
     );
 
     expect(result.persisted).toBe(true);
     expect(result.snapshot.pageIndex).toBe(0);
     expect(result.snapshot.isEnded).toBe(false);
-    expect(result.snapshot.choices).toHaveLength(3);
-    expect(result.snapshot.text).toContain('прихожей');
+    expect(result.snapshot.choices).toHaveLength(2);
+    expect(result.snapshot.text).toContain('Внутри тихо');
     expect(result.snapshot.passages.length).toBeGreaterThan(initialPassageCount);
   });
 
   test('terminal choice autosaves ending, current text and transcript', async () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
     const opened = await StorySession.open(STORY_PACKAGE, repository);
-    const nearDoor = await opened.session.choose(
-      findChoice(opened.snapshot, 'Подойти к двери'),
+
+    let current = await opened.session.choose(
+      findChoice(opened.snapshot, 'Зайти в дом сразу'),
+    );
+    current = await opened.session.choose(
+      findChoice(current.snapshot, 'Осмотреть дом тщательно'),
+    );
+    current = await opened.session.choose(
+      findChoice(current.snapshot, 'Укрепить вход'),
+    );
+    current = await opened.session.choose(
+      findChoice(current.snapshot, 'Не подходить к окну'),
     );
     const completed = await opened.session.choose(
-      findChoice(nearDoor.snapshot, 'Открыть дверь'),
+      findChoice(current.snapshot, 'Остаться у люка'),
     );
 
     expect(completed.snapshot.isEnded).toBe(true);
-    expect(completed.snapshot.endingId).toBe('ending_open');
-    expect(completed.snapshot.text).toContain('площадке');
+    expect(completed.snapshot.endingId).toBe('e12_glass');
+    expect(completed.snapshot.text).toContain('Третий удар выбивает стекло');
 
     const stored = await repository.load('zavalinka');
     expect(stored.status).toBe('loaded');
@@ -197,14 +207,14 @@ describe('StorySession persistence flow', () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
     const opened = await StorySession.open(STORY_PACKAGE, repository);
     await opened.session.setPage(2);
-    await opened.session.choose(findChoice(opened.snapshot, 'Подойти к двери'));
+    await opened.session.choose(findChoice(opened.snapshot, 'Зайти в дом сразу'));
 
     const restarted = await opened.session.restart();
     expect(restarted.persisted).toBe(true);
     expect(restarted.snapshot.pageIndex).toBe(0);
     expect(restarted.snapshot.isEnded).toBe(false);
     expect(restarted.snapshot.choices).toHaveLength(2);
-    expect(restarted.snapshot.text).toContain('Ночь. В квартире темно');
+    expect(restarted.snapshot.text).toContain('Ливень начался не сразу');
   });
 
   test('raw invalid JSON is handled as corrupted save before Ink restore', async () => {
