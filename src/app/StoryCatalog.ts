@@ -22,14 +22,18 @@ export type StoryCatalogSnapshot = Readonly<{
 
 type StoryMetadataSource = Pick<StoryLoader, 'listMetadata'>;
 type StorySaveSource = Pick<StorySaveRepository, 'load'>;
-type EndingCountSource = Readonly<{
+type EndingHistorySource = Readonly<{
   count(storyId: string): Promise<number>;
+  unlock?(
+    storyId: string,
+    ending: Readonly<{id: string; text: string}>,
+  ): Promise<unknown>;
 }>;
 
 export async function loadStoryCatalog(
   loader: StoryMetadataSource,
   repository: StorySaveSource,
-  endings?: EndingCountSource,
+  endings?: EndingHistorySource,
 ): Promise<StoryCatalogSnapshot> {
   const items: StoryCatalogItem[] = [];
   let storageUnavailable = false;
@@ -42,6 +46,23 @@ export async function loadStoryCatalog(
     } catch {
       storageUnavailable = true;
       loadResult = {status: 'not-found'};
+    }
+
+    if (
+      endings?.unlock &&
+      loadResult.status === 'loaded' &&
+      loadResult.save.storyContentVersion === metadata.contentVersion &&
+      loadResult.save.completed &&
+      loadResult.save.endingId
+    ) {
+      try {
+        await endings.unlock(metadata.id, {
+          id: loadResult.save.endingId,
+          text: loadResult.save.readerCurrentText ?? '',
+        });
+      } catch {
+        storageUnavailable = true;
+      }
     }
 
     let unlockedEndingCount = 0;
