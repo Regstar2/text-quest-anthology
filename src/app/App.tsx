@@ -11,6 +11,7 @@ import {
   useColorScheme,
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
+import {adsProvider} from '../ads';
 import {APP_CONFIG} from '../config/appConfig';
 import {UI_STRINGS} from '../config/uiStrings';
 import type {InkRuntimeSnapshot} from '../narrative/InkStoryRuntime';
@@ -22,6 +23,7 @@ import {storyLoader} from '../narrative/StoryLoader';
 import {storySaveRepository} from '../persistence/NativeStorySaveStorage';
 
 const DEFAULT_STORY = storyLoader.listMetadata()[0];
+const AdsBanner = adsProvider.Banner;
 
 if (!DEFAULT_STORY) {
   throw new Error('STORY_NOT_FOUND: Generated story manifest is empty.');
@@ -36,6 +38,10 @@ export function App(): React.JSX.Element {
   const [notice, setNotice] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
+
+  useEffect(() => {
+    void adsProvider.initialize();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -68,6 +74,11 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const onAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        void adsProvider.preloadInterstitial();
+        return;
+      }
+
       if (nextState !== 'inactive' && nextState !== 'background') {
         return;
       }
@@ -129,6 +140,18 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const restartAfterEndingAd = async () => {
+    if (snapshot?.isEnded) {
+      try {
+        await adsProvider.showInterstitial('story-ending-restart');
+      } catch {
+        // Advertising must never block the story transition.
+      }
+    }
+
+    await restart();
+  };
+
   const requestRestart = () => {
     Alert.alert(UI_STRINGS.restart, UI_STRINGS.restartConfirmation, [
       {text: UI_STRINGS.cancel, style: 'cancel'},
@@ -136,7 +159,7 @@ export function App(): React.JSX.Element {
         text: UI_STRINGS.restart,
         style: 'destructive',
         onPress: () => {
-          void restart();
+          void restartAfterEndingAd();
         },
       },
     ]);
@@ -148,6 +171,7 @@ export function App(): React.JSX.Element {
     <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <SafeAreaView style={[styles.safeArea, isDarkMode && styles.safeAreaDark]}>
+        <AdsBanner isDarkMode={isDarkMode} />
         <View style={styles.content}>
           <Text style={[styles.title, isDarkMode && styles.textDark]}>
             {DEFAULT_STORY.title}
