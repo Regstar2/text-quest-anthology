@@ -13,6 +13,7 @@ import type {
   AdShowResult,
   InterstitialPlacement,
 } from '../AdsProvider';
+import {InterstitialFrequencyPolicy} from '../InterstitialFrequencyPolicy';
 import {ADS_CONFIG} from '../../config/adsConfig';
 
 function logAdsError(message: string, error: unknown): void {
@@ -23,7 +24,10 @@ function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element {
   const {height, width} = useWindowDimensions();
   const [adSize, setAdSize] = useState<BannerAdSize | null>(null);
   const bannerWidth = Math.max(1, Math.floor(width));
-  const reservedHeight = Math.max(50, Math.ceil(height * 0.15));
+  const reservedHeight = Math.max(
+    ADS_CONFIG.bannerLayout.minHeight,
+    Math.ceil(height * ADS_CONFIG.bannerLayout.heightRatio),
+  );
 
   useEffect(() => {
     let active = true;
@@ -70,6 +74,9 @@ function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element {
 export class YandexAdsProvider implements AdsProvider {
   readonly Banner = YandexBanner;
 
+  private readonly interstitialFrequency = new InterstitialFrequencyPolicy(
+    ADS_CONFIG.interstitialFrequency,
+  );
   private initializationPromise: Promise<void> | null = null;
   private interstitialAd: InterstitialAd | null = null;
   private preloadPromise: Promise<void> | null = null;
@@ -129,6 +136,10 @@ export class YandexAdsProvider implements AdsProvider {
       return 'unavailable';
     }
 
+    if (!this.interstitialFrequency.registerEnding()) {
+      return 'unavailable';
+    }
+
     const ad = this.interstitialAd;
     this.interstitialAd = null;
 
@@ -149,6 +160,11 @@ export class YandexAdsProvider implements AdsProvider {
 
         settled = true;
         this.isShowingInterstitial = false;
+
+        if (result === 'success') {
+          this.interstitialFrequency.markShown();
+        }
+
         void this.preloadInterstitial();
         resolve(result);
       };
