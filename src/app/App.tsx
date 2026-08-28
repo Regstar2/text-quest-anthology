@@ -1,20 +1,25 @@
-import React, {useRef, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
+  Alert,
+  AppState,
   Pressable,
   StatusBar,
   StyleSheet,
   Text,
   View,
+  type AppStateStatus,
   useColorScheme,
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import {APP_CONFIG} from '../config/appConfig';
 import {UI_STRINGS} from '../config/uiStrings';
+import type {InkRuntimeSnapshot} from '../narrative/InkStoryRuntime';
 import {
-  InkStoryRuntime,
-  type InkRuntimeSnapshot,
-} from '../narrative/InkStoryRuntime';
+  StorySession,
+  type StorySessionRecovery,
+} from '../narrative/StorySession';
 import {storyLoader} from '../narrative/StoryLoader';
+import {storySaveRepository} from '../persistence/NativeStorySaveStorage';
 
 const DEFAULT_STORY = storyLoader.listMetadata()[0];
 
@@ -22,26 +27,122 @@ if (!DEFAULT_STORY) {
   throw new Error('STORY_NOT_FOUND: Generated story manifest is empty.');
 }
 
+const DEFAULT_STORY_PACKAGE = storyLoader.load(DEFAULT_STORY.id);
+
 export function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
-  const runtimeRef = useRef<InkStoryRuntime | null>(null);
-  const [snapshot, setSnapshot] = useState<InkRuntimeSnapshot>(() =>
-    createSession(runtimeRef),
-  );
+  const sessionRef = useRef<StorySession | null>(null);
+  const [snapshot, setSnapshot] = useState<InkRuntimeSnapshot | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isMutating, setIsMutating] = useState(false);
 
-  const choose = (choiceIndex: number) => {
-    const runtime = runtimeRef.current;
+  useEffect(() => {
+    let active = true;
 
-    if (!runtime) {
+    void StorySession.open(DEFAULT_STORY_PACKAGE, storySaveRepository)
+      .then(result => {
+        if (!active) {
+          return;
+        }
+
+        sessionRef.current = result.session;
+        setSnapshot(result.snapshot);
+        setNotice(recoveryMessage(result.recovery));
+        setIsLoading(false);
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+
+        setNotice(UI_STRINGS.startupFailed);
+        setIsLoading(false);
+      });
+
+    return () => {
+      active = false;
+      sessionRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState !== 'inactive' && nextState !== 'background') {
+        return;
+      }
+
+      const session = sessionRef.current;
+
+      if (!session) {
+        return;
+      }
+
+      void session.flush().then(persisted => {
+        if (!persisted) {
+          setNotice(UI_STRINGS.saveFailed);
+        }
+      });
+    };
+
+    const subscription = AppState.addEventListener('change', onAppStateChange);
+    return () => subscription.remove();
+  }, []);
+
+  const choose = async (choiceIndex: number) => {
+    const session = sessionRef.current;
+
+    if (!session || isMutating) {
       return;
     }
 
-    setSnapshot(runtime.choose(choiceIndex));
+    setIsMutating(true);
+
+    try {
+      const result = await session.choose(choiceIndex);
+      setSnapshot(result.snapshot);
+      setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
+    } catch {
+      setNotice(UI_STRINGS.storyActionFailed);
+    } finally {
+      setIsMutating(false);
+    }
   };
 
-  const restart = () => {
-    setSnapshot(createSession(runtimeRef));
+  const restart = async () => {
+    const session = sessionRef.current;
+
+    if (!session || isMutating) {
+      return;
+    }
+
+    setIsMutating(true);
+
+    try {
+      const result = await session.restart();
+      setSnapshot(result.snapshot);
+      setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
+    } catch {
+      setNotice(UI_STRINGS.storyActionFailed);
+    } finally {
+      setIsMutating(false);
+    }
   };
+
+  const requestRestart = () => {
+    Alert.alert(UI_STRINGS.restart, UI_STRINGS.restartConfirmation, [
+      {text: UI_STRINGS.cancel, style: 'cancel'},
+      {
+        text: UI_STRINGS.restart,
+        style: 'destructive',
+        onPress: () => {
+          void restart();
+        },
+      },
+    ]);
+  };
+
+  const isBusy = isLoading || isMutating;
 
   return (
     <SafeAreaProvider>
@@ -55,21 +156,32 @@ export function App(): React.JSX.Element {
             {UI_STRINGS.prototypeStatus} · v{APP_CONFIG.versionName}
           </Text>
 
+          {notice ? (
+            <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>
+              {notice}
+            </Text>
+          ) : null}
+
           <View style={[styles.storyCard, isDarkMode && styles.storyCardDark]}>
             <Text style={[styles.storyText, isDarkMode && styles.textDark]}>
-              {snapshot.text}
+              {snapshot?.text ??
+                (isLoading ? UI_STRINGS.loadingStory : UI_STRINGS.startupFailed)}
             </Text>
           </View>
 
-          {snapshot.choices.map(choice => (
+          {snapshot?.choices.map(choice => (
             <Pressable
               accessibilityRole="button"
+              disabled={isBusy}
               key={choice.index}
-              onPress={() => choose(choice.index)}
+              onPress={() => {
+                void choose(choice.index);
+              }}
               style={({pressed}) => [
                 styles.choice,
                 isDarkMode && styles.choiceDark,
                 pressed && styles.choicePressed,
+                isBusy && styles.disabled,
               ]}>
               <Text style={[styles.choiceText, isDarkMode && styles.textDark]}>
                 {choice.text}
@@ -77,24 +189,29 @@ export function App(): React.JSX.Element {
             </Pressable>
           ))}
 
-          {snapshot.isEnded ? (
+          {snapshot?.isEnded ? (
             <View style={styles.endingBlock}>
               <Text style={[styles.ending, isDarkMode && styles.textDark]}>
                 {UI_STRINGS.endingLabel}: {snapshot.endingId ?? 'unknown'}
               </Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={restart}
-                style={({pressed}) => [
-                  styles.restart,
-                  isDarkMode && styles.choiceDark,
-                  pressed && styles.choicePressed,
-                ]}>
-                <Text style={[styles.choiceText, isDarkMode && styles.textDark]}>
-                  {UI_STRINGS.restart}
-                </Text>
-              </Pressable>
             </View>
+          ) : null}
+
+          {snapshot ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={isBusy}
+              onPress={requestRestart}
+              style={({pressed}) => [
+                styles.restart,
+                isDarkMode && styles.choiceDark,
+                pressed && styles.choicePressed,
+                isBusy && styles.disabled,
+              ]}>
+              <Text style={[styles.choiceText, isDarkMode && styles.textDark]}>
+                {UI_STRINGS.restart}
+              </Text>
+            </Pressable>
           ) : null}
         </View>
       </SafeAreaView>
@@ -102,13 +219,17 @@ export function App(): React.JSX.Element {
   );
 }
 
-function createSession(
-  runtimeRef: React.MutableRefObject<InkStoryRuntime | null>,
-): InkRuntimeSnapshot {
-  const storyPackage = storyLoader.load(DEFAULT_STORY.id);
-  const runtime = new InkStoryRuntime(storyPackage.compiledStory);
-  runtimeRef.current = runtime;
-  return runtime.continueToChoiceOrEnd();
+function recoveryMessage(recovery: StorySessionRecovery | null): string | null {
+  switch (recovery) {
+    case 'corrupted-save-reset':
+      return UI_STRINGS.corruptedSaveReset;
+    case 'incompatible-save-reset':
+      return UI_STRINGS.incompatibleSaveReset;
+    case 'storage-unavailable':
+      return UI_STRINGS.storageUnavailable;
+    case null:
+      return null;
+  }
 }
 
 const styles = StyleSheet.create({
@@ -135,6 +256,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 8,
     textAlign: 'center',
+  },
+  notice: {
+    color: '#92400e',
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  noticeDark: {
+    color: '#fcd34d',
   },
   storyCard: {
     backgroundColor: '#f3f4f6',
@@ -163,6 +294,9 @@ const styles = StyleSheet.create({
   },
   choicePressed: {
     opacity: 0.65,
+  },
+  disabled: {
+    opacity: 0.5,
   },
   choiceText: {
     color: '#111111',
