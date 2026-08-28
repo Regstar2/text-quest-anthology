@@ -1,0 +1,40 @@
+name: Assemble Zavalinka canvas
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/assemble-zavalinka-canvas.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rebuild exact canvas
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stories/zavalinka/design
+          base64 -d stories/zavalinka/design/.canvas-upload/final.canvas.gz.b64 \
+            | gzip -d \
+            > stories/zavalinka/design/zavalinka-decision-map.canvas
+          echo "0f9f6c18a78ba22e5844bfbb41078a44816c1c2c29d5ef3517945836ab5bd098  stories/zavalinka/design/zavalinka-decision-map.canvas" | sha256sum -c -
+
+      - name: Commit final canvas and remove staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf stories/zavalinka/design/.canvas-upload
+          rm -f .github/workflows/assemble-zavalinka-canvas.yml
+          git add -A
+          git commit -m "docs(zavalinka): add final decision canvas"
+          git push origin HEAD:main
