@@ -16,7 +16,7 @@ import type {
 import {InterstitialFrequencyPolicy} from '../InterstitialFrequencyPolicy';
 import {ADS_CONFIG} from '../../config/adsConfig';
 
-type BannerLoadState = 'idle' | 'loading' | 'loaded' | 'failed';
+type BannerLoadState = 'loading' | 'loaded' | 'failed';
 
 function logAdsError(message: string, error: unknown): void {
   console.warn(`[ads:yandex] ${message}`, error);
@@ -28,8 +28,7 @@ function YandexBanner({
 }: AdsBannerProps): React.JSX.Element {
   const {height, width} = useWindowDimensions();
   const [adSize, setAdSize] = useState<BannerAdSize | null>(null);
-  const [loadState, setLoadState] = useState<BannerLoadState>('idle');
-  const [hasActivated, setHasActivated] = useState(false);
+  const [loadState, setLoadState] = useState<BannerLoadState>('loading');
   const bannerWidth = Math.max(1, Math.floor(width));
   const reservedHeight = Math.max(
     ADS_CONFIG.bannerLayout.minHeight,
@@ -37,16 +36,6 @@ function YandexBanner({
   );
 
   useEffect(() => {
-    if (visible) {
-      setHasActivated(true);
-    }
-  }, [visible]);
-
-  useEffect(() => {
-    if (!hasActivated) {
-      return;
-    }
-
     let active = true;
     setLoadState('loading');
 
@@ -66,7 +55,7 @@ function YandexBanner({
     return () => {
       active = false;
     };
-  }, [bannerWidth, hasActivated]);
+  }, [bannerWidth]);
 
   const isVisible = visible && loadState !== 'failed';
 
@@ -74,20 +63,22 @@ function YandexBanner({
     <View
       accessibilityElementsHidden={!isVisible}
       accessibilityLabel={isVisible ? 'Реклама' : undefined}
+      collapsable={false}
       importantForAccessibility={isVisible ? 'auto' : 'no-hide-descendants'}
       pointerEvents={isVisible ? 'auto' : 'none'}
       style={[
         styles.bannerSlot,
+        {height: reservedHeight},
         isVisible
-          ? {minHeight: reservedHeight}
-          : styles.bannerSlotHidden,
+          ? styles.bannerSlotVisible
+          : [styles.bannerSlotHidden, {top: -reservedHeight - 8}],
         isVisible && loadState === 'loaded' && styles.bannerSlotLoaded,
         isVisible &&
           loadState === 'loaded' &&
           isDarkMode &&
           styles.bannerSlotLoadedDark,
       ]}>
-      {hasActivated && adSize ? (
+      {adSize ? (
         <BannerView
           adRequest={{adUnitId: ADS_CONFIG.adUnits.banner}}
           onAdFailedToLoad={error => {
@@ -239,11 +230,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
     width: '100%',
+    zIndex: 20,
+  },
+  bannerSlotVisible: {
+    opacity: 1,
+    position: 'relative',
   },
   bannerSlotHidden: {
-    height: 0,
-    minHeight: 0,
+    left: 0,
     opacity: 0,
+    position: 'absolute',
+    right: 0,
   },
   bannerSlotLoaded: {
     backgroundColor: '#f3f4f6',
