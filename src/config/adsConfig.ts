@@ -9,9 +9,12 @@ export interface AdsConfig {
     heightRatio: number;
     minHeight: number;
   };
+  bannerFrequency: {
+    pagesPerBanner: number;
+    feedChoicesPerBanner: number;
+  };
   interstitialFrequency: {
-    endingsPerAd: number;
-    cooldownMs: number;
+    restartsPerAd: number;
   };
 }
 
@@ -26,8 +29,11 @@ export const ADS_CONFIG: AdsConfig = {
     heightRatio: 0.08,
     minHeight: 50,
   },
+  bannerFrequency: {
+    pagesPerBanner: 3,
+    feedChoicesPerBanner: 3,
+  },
   interstitialFrequency: {
-    endingsPerAd: 3,
-    cooldownMs: 10 * 60 * 1000,
+    restartsPerAd: 3,
   },
 };
