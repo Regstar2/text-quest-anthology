@@ -88,6 +88,7 @@ export function App(): React.JSX.Element {
   const [isMutating, setIsMutating] = useState(false);
   const [hasStartedSession, setHasStartedSession] = useState(false);
   const [pageHeight, setPageHeight] = useState(0);
+  const [readerRevision, setReaderRevision] = useState(0);
   const [measurement, setMeasurement] =
     useState<ReaderMeasurement>(EMPTY_MEASUREMENT);
 
@@ -160,10 +161,10 @@ export function App(): React.JSX.Element {
 
   const measurementKey = useMemo(
     () =>
-      `${snapshot?.text ?? ''}\u0001${
+      `${readerRevision}\u0000${snapshot?.text ?? ''}\u0001${
         snapshot?.choices.map(choice => `${choice.index}:${choice.text}`).join('\u0002') ?? ''
       }`,
-    [snapshot?.choices, snapshot?.text],
+    [readerRevision, snapshot?.choices, snapshot?.text],
   );
 
   measurementKeyRef.current = measurementKey;
@@ -264,6 +265,7 @@ export function App(): React.JSX.Element {
       const result = await session.choose(choiceIndex);
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
+      setReaderRevision(previous => previous + 1);
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
       setScreen(result.snapshot.isEnded ? 'ending' : 'reader');
@@ -292,6 +294,7 @@ export function App(): React.JSX.Element {
       const result = await session.restart();
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
+      setReaderRevision(previous => previous + 1);
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
       setScreen('reader');
@@ -319,6 +322,9 @@ export function App(): React.JSX.Element {
   };
 
   const changeReaderMode = (mode: ReaderMode) => {
+    if (mode === 'pages' && readerMode !== 'pages') {
+      setReaderRevision(previous => previous + 1);
+    }
     setReaderMode(mode);
     setMenuView(null);
   };
@@ -769,10 +775,14 @@ export function App(): React.JSX.Element {
                       ) : null}
                     </>
                   ) : (
-                    <View style={styles.pagePreparing}>
-                      <Text style={[styles.pagePreparingText, isDarkMode && styles.textMutedDark]}>
-                        …
-                      </Text>
+                    <View style={styles.pageFallbackTextArea}>
+                      {currentParagraphs.map((paragraph, index) => (
+                        <Text
+                          key={`fallback-${measurementKey}-${index}`}
+                          style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
+                          {indentParagraph(paragraph)}
+                        </Text>
+                      ))}
                     </View>
                   )}
                 </View>
@@ -798,7 +808,7 @@ export function App(): React.JSX.Element {
                   </Pressable>
 
                   <Text style={[styles.pageCounter, isDarkMode && styles.textMutedDark]}>
-                    {measurementReady ? `${effectivePageIndex + 1}/${pages.length}` : '…'}
+                    {measurementReady ? `${effectivePageIndex + 1}/${pages.length}` : '1/…'}
                   </Text>
 
                   <Pressable
@@ -1094,6 +1104,11 @@ const styles = StyleSheet.create({
     minHeight: 0,
     overflow: 'hidden',
   },
+  pageFallbackTextArea: {
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden',
+  },
   measureLayer: {
     position: 'absolute',
     left: 0,
@@ -1115,12 +1130,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: PAGE_VERTICAL_PADDING / 2,
   },
-  pagePreparing: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pagePreparingText: {fontSize: 28, lineHeight: 32, color: '#777777'},
   pageFooter: {
     flexShrink: 0,
     minHeight: 58,
