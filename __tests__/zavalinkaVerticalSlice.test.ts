@@ -31,11 +31,11 @@ function findChoice(snapshot: StoryReaderSnapshot, textStart: string): number {
   return choice.index;
 }
 
-function readFlag(runtimeState: string, flag: string): unknown {
+function readBooleanFlag(runtimeState: string, flag: string): boolean {
   const parsed = JSON.parse(runtimeState) as {
     variablesState?: Record<string, unknown>;
   };
-  return parsed.variablesState?.[flag];
+  return parsed.variablesState?.[flag] === true;
 }
 
 describe('Завалинка vertical slice known routes', () => {
@@ -52,7 +52,9 @@ describe('Завалинка vertical slice known routes', () => {
     if (savedAfterFlag.status !== 'loaded') {
       throw new Error('Expected save after early flag-setting choice.');
     }
-    expect(readFlag(savedAfterFlag.save.runtimeState, 'PIPE_KNOWN')).toBe(true);
+    expect(
+      readBooleanFlag(savedAfterFlag.save.runtimeState, 'PIPE_KNOWN'),
+    ).toBe(true);
 
     const resumedAfterFlag = await StorySession.open(STORY_PACKAGE, repository);
     expect(resumedAfterFlag.resumed).toBe(true);
@@ -80,8 +82,12 @@ describe('Завалинка vertical slice known routes', () => {
     if (savedBeforeConsequence.status !== 'loaded') {
       throw new Error('Expected save before delayed attic consequence.');
     }
-    expect(readFlag(savedBeforeConsequence.save.runtimeState, 'PIPE_KNOWN')).toBe(true);
-    expect(readFlag(savedBeforeConsequence.save.runtimeState, 'BARRICADE')).toBe(true);
+    expect(
+      readBooleanFlag(savedBeforeConsequence.save.runtimeState, 'PIPE_KNOWN'),
+    ).toBe(true);
+    expect(
+      readBooleanFlag(savedBeforeConsequence.save.runtimeState, 'BARRICADE'),
+    ).toBe(true);
 
     const resumedBeforeConsequence = await StorySession.open(
       STORY_PACKAGE,
@@ -109,7 +115,9 @@ describe('Завалинка vertical slice known routes', () => {
     if (completedSave.status !== 'loaded') {
       throw new Error('Expected completed route A save.');
     }
-    expect(readFlag(completedSave.save.runtimeState, 'WINDOW_SECURED')).toBe(true);
+    expect(
+      readBooleanFlag(completedSave.save.runtimeState, 'WINDOW_SECURED'),
+    ).toBe(true);
   });
 
   test('route B keeps PIPE_KNOWN false, hides the delayed pipe action and reaches e12_glass', async () => {
@@ -134,7 +142,7 @@ describe('Завалинка vertical slice known routes', () => {
     if (saved.status !== 'loaded') {
       throw new Error('Expected route B save.');
     }
-    expect(readFlag(saved.save.runtimeState, 'PIPE_KNOWN')).toBe(false);
+    expect(readBooleanFlag(saved.save.runtimeState, 'PIPE_KNOWN')).toBe(false);
     expect(
       current.snapshot.choices.some(choice =>
         choice.text.startsWith('Сразу заблокировать маленькое окно'),
