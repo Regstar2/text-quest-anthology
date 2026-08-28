@@ -12,6 +12,7 @@ export type StorySave = Readonly<{
   updatedAt: string;
   completed: boolean;
   endingId: string | null;
+  readerCurrentText?: string;
   readerPassages?: readonly string[];
   readerPageIndex?: number;
 }>;
@@ -99,6 +100,7 @@ function isStorySave(value: unknown): value is StorySave {
       value.endingId === null ||
       (typeof value.endingId === 'string' && value.endingId.length > 0)
     ) ||
+    !isOptionalText(value.readerCurrentText) ||
     !isReaderPassages(value.readerPassages) ||
     !isReaderPageIndex(value.readerPageIndex)
   ) {
@@ -110,6 +112,10 @@ function isStorySave(value: unknown): value is StorySave {
   }
 
   return true;
+}
+
+function isOptionalText(value: unknown): value is string | undefined {
+  return value === undefined || (typeof value === 'string' && value.length > 0);
 }
 
 function isReaderPassages(value: unknown): value is readonly string[] | undefined {

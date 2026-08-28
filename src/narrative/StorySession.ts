@@ -15,9 +15,6 @@ export type StoryReaderSnapshot = InkRuntimeSnapshot &
   Readonly<{
     passages: readonly string[];
     pageIndex: number;
-    pageCount: number;
-    pageText: string;
-    hasNextPage: boolean;
   }>;
 
 export type StorySessionOpenResult = Readonly<{
@@ -33,12 +30,12 @@ export type StorySessionMutationResult = Readonly<{
 }>;
 
 type Clock = () => Date;
-
 const systemClock: Clock = () => new Date();
 
 export class StorySession {
   private runtime: InkStoryRuntime;
   private currentSnapshot: InkRuntimeSnapshot;
+  private currentReaderText: string;
   private readerPassages: string[];
   private readerPageIndex: number;
   private startedAt: string;
@@ -49,14 +46,16 @@ export class StorySession {
     private readonly clock: Clock,
     runtime: InkStoryRuntime,
     snapshot: InkRuntimeSnapshot,
+    currentReaderText: string,
     readerPassages: readonly string[],
     readerPageIndex: number,
     startedAt: string,
   ) {
     this.runtime = runtime;
     this.currentSnapshot = snapshot;
+    this.currentReaderText = currentReaderText;
     this.readerPassages = [...readerPassages];
-    this.readerPageIndex = normalizePageIndex(snapshot, readerPageIndex);
+    this.readerPageIndex = Math.max(0, readerPageIndex);
     this.startedAt = startedAt;
   }
 
@@ -120,18 +119,18 @@ export class StorySession {
         );
       }
 
+      const currentReaderText = loadResult.save.readerCurrentText ?? snapshot.text;
       const readerPassages =
-        loadResult.save.readerPassages ?? passagesFromText(snapshot.text);
-      const readerPageIndex =
-        loadResult.save.readerPageIndex ?? legacyPageIndex(snapshot);
+        loadResult.save.readerPassages ?? passagesFromText(currentReaderText);
       const session = new StorySession(
         storyPackage,
         repository,
         clock,
         runtime,
         snapshot,
+        currentReaderText,
         readerPassages,
-        readerPageIndex,
+        loadResult.save.readerPageIndex ?? 0,
         loadResult.save.startedAt,
       );
 
@@ -152,15 +151,12 @@ export class StorySession {
     }
   }
 
-  async nextPage(): Promise<StorySessionMutationResult> {
-    const pages = pagesFromText(this.currentSnapshot.text);
-
-    if (this.readerPageIndex >= pages.length - 1) {
-      throw new Error('READER_PAGE_END: Current passage has no next page.');
+  async setPage(pageIndex: number): Promise<StorySessionMutationResult> {
+    if (!Number.isInteger(pageIndex) || pageIndex < 0) {
+      throw new Error('READER_PAGE_INVALID: Page index must be non-negative.');
     }
 
-    this.readerPageIndex += 1;
-
+    this.readerPageIndex = pageIndex;
     return {
       snapshot: this.readerSnapshot(),
       persisted: await this.persistCurrentState(),
@@ -169,7 +165,8 @@ export class StorySession {
 
   async choose(choiceIndex: number): Promise<StorySessionMutationResult> {
     this.currentSnapshot = this.runtime.choose(choiceIndex);
-    this.readerPassages.push(...passagesFromText(this.currentSnapshot.text));
+    this.currentReaderText = this.currentSnapshot.text;
+    this.readerPassages.push(...passagesFromText(this.currentReaderText));
     this.readerPageIndex = 0;
 
     return {
@@ -190,7 +187,8 @@ export class StorySession {
     const fresh = createRuntimeAtStart(this.storyPackage);
     this.runtime = fresh.runtime;
     this.currentSnapshot = fresh.snapshot;
-    this.readerPassages = passagesFromText(fresh.snapshot.text);
+    this.currentReaderText = fresh.snapshot.text;
+    this.readerPassages = passagesFromText(this.currentReaderText);
     this.readerPageIndex = 0;
     this.startedAt = this.clock().toISOString();
 
@@ -219,6 +217,7 @@ export class StorySession {
       clock,
       fresh.runtime,
       fresh.snapshot,
+      fresh.snapshot.text,
       readerPassages,
       0,
       clock().toISOString(),
@@ -233,11 +232,12 @@ export class StorySession {
   }
 
   private readerSnapshot(): StoryReaderSnapshot {
-    return createReaderSnapshot(
-      this.currentSnapshot,
-      this.readerPassages,
-      this.readerPageIndex,
-    );
+    return {
+      ...this.currentSnapshot,
+      text: this.currentReaderText,
+      passages: [...this.readerPassages],
+      pageIndex: this.readerPageIndex,
+    };
   }
 
   private async persistCurrentState(): Promise<boolean> {
@@ -249,6 +249,7 @@ export class StorySession {
       updatedAt: this.clock().toISOString(),
       completed: this.currentSnapshot.isEnded,
       endingId: this.currentSnapshot.endingId,
+      readerCurrentText: this.currentReaderText,
       readerPassages: [...this.readerPassages],
       readerPageIndex: this.readerPageIndex,
     };
@@ -270,43 +271,11 @@ function createRuntimeAtStart(storyPackage: StoryManifestEntry): Readonly<{
   return {runtime, snapshot: runtime.continueToChoiceOrEnd()};
 }
 
-function createReaderSnapshot(
-  snapshot: InkRuntimeSnapshot,
-  passages: readonly string[],
-  pageIndex: number,
-): StoryReaderSnapshot {
-  const pages = pagesFromText(snapshot.text);
-  const normalizedPageIndex = normalizePageIndex(snapshot, pageIndex);
-
-  return {
-    ...snapshot,
-    passages: [...passages],
-    pageIndex: normalizedPageIndex,
-    pageCount: pages.length,
-    pageText: pages[normalizedPageIndex] ?? '',
-    hasNextPage: normalizedPageIndex < pages.length - 1,
-  };
-}
-
 function passagesFromText(text: string): string[] {
   return text
     .split(/\n\s*\n/g)
     .map(passage => passage.trim())
     .filter(passage => passage.length > 0);
-}
-
-function pagesFromText(text: string): string[] {
-  const pages = passagesFromText(text);
-  return pages.length > 0 ? pages : [''];
-}
-
-function normalizePageIndex(snapshot: InkRuntimeSnapshot, pageIndex: number): number {
-  const lastPageIndex = pagesFromText(snapshot.text).length - 1;
-  return Math.min(Math.max(pageIndex, 0), lastPageIndex);
-}
-
-function legacyPageIndex(snapshot: InkRuntimeSnapshot): number {
-  return pagesFromText(snapshot.text).length - 1;
 }
 
 function matchesSavedCompletion(

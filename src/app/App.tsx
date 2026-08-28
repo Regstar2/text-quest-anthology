@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Alert,
   AppState,
@@ -10,6 +10,9 @@ import {
   Text,
   View,
   type AppStateStatus,
+  type LayoutChangeEvent,
+  type NativeSyntheticEvent,
+  type TextLayoutEventData,
   useColorScheme,
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
@@ -26,6 +29,8 @@ import {storySaveRepository} from '../persistence/NativeStorySaveStorage';
 
 const DEFAULT_STORY = storyLoader.listMetadata()[0];
 const AdsBanner = adsProvider.Banner;
+const STORY_LINE_HEIGHT = 28;
+const PAGE_GAP = 14;
 
 type AppScreen = 'start' | 'reader' | 'ending';
 type ReaderMode = 'pages' | 'feed';
@@ -48,12 +53,14 @@ export function App(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
   const [hasStartedSession, setHasStartedSession] = useState(false);
+  const [pageHeight, setPageHeight] = useState(0);
+  const [choiceHeight, setChoiceHeight] = useState(0);
+  const [measuredLines, setMeasuredLines] = useState<readonly string[]>([]);
 
   const beginMutation = (): boolean => {
     if (mutationLockRef.current) {
       return false;
     }
-
     mutationLockRef.current = true;
     setIsMutating(true);
     return true;
@@ -70,13 +77,12 @@ export function App(): React.JSX.Element {
     }
 
     setScreen('start');
-
     const session = sessionRef.current;
     if (!session || !hasStartedSessionRef.current) {
       return;
     }
 
-    void session.flush().then(persisted => {
+    session.flush().then(persisted => {
       if (!persisted) {
         setNotice(UI_STRINGS.saveFailed);
       }
@@ -84,18 +90,17 @@ export function App(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    void adsProvider.initialize();
+    adsProvider.initialize();
   }, []);
 
   useEffect(() => {
     let active = true;
 
-    void StorySession.open(DEFAULT_STORY_PACKAGE, storySaveRepository)
+    StorySession.open(DEFAULT_STORY_PACKAGE, storySaveRepository)
       .then(result => {
         if (!active) {
           return;
         }
-
         sessionRef.current = result.session;
         hasStartedSessionRef.current = result.resumed;
         setSnapshot(result.snapshot);
@@ -107,7 +112,6 @@ export function App(): React.JSX.Element {
         if (!active) {
           return;
         }
-
         setNotice(UI_STRINGS.startupFailed);
         setIsLoading(false);
       });
@@ -119,22 +123,24 @@ export function App(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
+    setMeasuredLines([]);
+    setChoiceHeight(0);
+  }, [snapshot?.text]);
+
+  useEffect(() => {
     const onAppStateChange = (nextState: AppStateStatus) => {
       if (nextState === 'active') {
-        void adsProvider.preloadInterstitial();
+        adsProvider.preloadInterstitial();
         return;
       }
-
       if (nextState !== 'inactive' && nextState !== 'background') {
         return;
       }
-
       const session = sessionRef.current;
       if (!session || !hasStartedSessionRef.current) {
         return;
       }
-
-      void session.flush().then(persisted => {
+      session.flush().then(persisted => {
         if (!persisted) {
           setNotice(UI_STRINGS.saveFailed);
         }
@@ -152,22 +158,18 @@ export function App(): React.JSX.Element {
         if (screen === 'start') {
           return false;
         }
-
         if (mutationLockRef.current) {
           return true;
         }
-
         exitStory();
         return true;
       },
     );
-
     return () => subscription.remove();
   }, [exitStory, screen]);
 
   const enterStory = async () => {
     const session = sessionRef.current;
-
     if (!session || !snapshot || isLoading || !beginMutation()) {
       return;
     }
@@ -179,7 +181,6 @@ export function App(): React.JSX.Element {
         setHasStartedSession(true);
         setNotice(persisted ? null : UI_STRINGS.saveFailed);
       }
-
       setScreen(snapshot.isEnded ? 'ending' : 'reader');
     } catch {
       setNotice(UI_STRINGS.storyActionFailed);
@@ -188,15 +189,14 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const nextPage = async () => {
+  const moveToPage = async (pageIndex: number) => {
     const session = sessionRef.current;
-
     if (!session || !beginMutation()) {
       return;
     }
 
     try {
-      const result = await session.nextPage();
+      const result = await session.setPage(pageIndex);
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
     } catch {
@@ -208,7 +208,6 @@ export function App(): React.JSX.Element {
 
   const choose = async (choiceIndex: number) => {
     const session = sessionRef.current;
-
     if (!session || !beginMutation()) {
       return;
     }
@@ -229,7 +228,6 @@ export function App(): React.JSX.Element {
 
   const restart = async (showEndingAd: boolean) => {
     const session = sessionRef.current;
-
     if (!session || !beginMutation()) {
       return;
     }
@@ -239,10 +237,9 @@ export function App(): React.JSX.Element {
         try {
           await adsProvider.showInterstitial('story-ending-restart');
         } catch {
-          // Advertising is optional and must never block the narrative reset.
+          // Advertising is optional and must never block narrative reset.
         }
       }
-
       const result = await session.restart();
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
@@ -260,31 +257,51 @@ export function App(): React.JSX.Element {
     if (mutationLockRef.current) {
       return;
     }
-
     const showEndingAd = screen === 'ending' && snapshot?.isEnded === true;
-
     Alert.alert(UI_STRINGS.restart, UI_STRINGS.restartConfirmation, [
       {text: UI_STRINGS.cancel, style: 'cancel'},
       {
         text: UI_STRINGS.restart,
         style: 'destructive',
         onPress: () => {
-          void restart(showEndingAd);
+          restart(showEndingAd);
         },
       },
     ]);
   };
 
+  const openStoryMenu = () => {
+    Alert.alert(UI_STRINGS.menu, undefined, [
+      {text: UI_STRINGS.returnToStart, onPress: exitStory},
+      {text: UI_STRINGS.restart, style: 'destructive', onPress: requestRestart},
+      {text: UI_STRINGS.cancel, style: 'cancel'},
+    ]);
+  };
+
   const isBusy = isLoading || isMutating;
   let startActionLabel: string = UI_STRINGS.startStory;
-
   if (hasStartedSession) {
     startActionLabel = UI_STRINGS.continueStory;
   }
-
   if (snapshot?.isEnded) {
     startActionLabel = UI_STRINGS.viewEnding;
   }
+
+  const pageTexts = useMemo(
+    () =>
+      paginateMeasuredLines(
+        measuredLines,
+        snapshot?.text ?? '',
+        pageHeight,
+        snapshot?.choices.length ? choiceHeight : 0,
+      ),
+    [choiceHeight, measuredLines, pageHeight, snapshot?.choices.length, snapshot?.text],
+  );
+  const effectivePageIndex = snapshot
+    ? Math.min(snapshot.pageIndex, Math.max(pageTexts.length - 1, 0))
+    : 0;
+  const isChoicePage =
+    Boolean(snapshot?.choices.length) && effectivePageIndex === pageTexts.length - 1;
 
   const renderChoices = () => {
     if (!snapshot || snapshot.choices.length === 0) {
@@ -300,7 +317,7 @@ export function App(): React.JSX.Element {
             disabled={isBusy}
             key={choice.index}
             onPress={() => {
-              void choose(choice.index);
+              choose(choice.index);
             }}
             style={({pressed}) => [
               styles.choice,
@@ -316,6 +333,25 @@ export function App(): React.JSX.Element {
       </View>
     );
   };
+
+  const renderHeader = (label: string) => (
+    <View style={[styles.readerHeader, isDarkMode && styles.headerDark]}>
+      <Text style={[styles.readerTitle, isDarkMode && styles.textDark]}>{label}</Text>
+      <Pressable
+        accessibilityLabel={UI_STRINGS.menu}
+        accessibilityRole="button"
+        disabled={isBusy}
+        hitSlop={8}
+        onPress={openStoryMenu}
+        style={({pressed}) => [
+          styles.menuButton,
+          pressed && styles.buttonPressed,
+          isBusy && styles.disabled,
+        ]}>
+        <Text style={[styles.menuButtonText, isDarkMode && styles.textDark]}>⋮</Text>
+      </Pressable>
+    </View>
+  );
 
   return (
     <SafeAreaProvider>
@@ -346,7 +382,6 @@ export function App(): React.JSX.Element {
                     mode === 'pages'
                       ? UI_STRINGS.readerModePages
                       : UI_STRINGS.readerModeFeed;
-
                   return (
                     <Pressable
                       accessibilityLabel={label}
@@ -383,26 +418,20 @@ export function App(): React.JSX.Element {
             </View>
 
             {notice ? (
-              <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>
-                {notice}
-              </Text>
+              <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>{notice}</Text>
             ) : null}
-
             {isLoading ? (
               <Text style={[styles.loading, isDarkMode && styles.textDark]}>
                 {UI_STRINGS.loadingStory}
               </Text>
             ) : null}
-
             {snapshot ? (
               <View style={styles.startActions}>
                 <Pressable
                   accessibilityLabel={startActionLabel}
                   accessibilityRole="button"
                   disabled={isBusy}
-                  onPress={() => {
-                    void enterStory();
-                  }}
+                  onPress={enterStory}
                   style={({pressed}) => [
                     styles.primaryButton,
                     isDarkMode && styles.primaryButtonDark,
@@ -417,7 +446,6 @@ export function App(): React.JSX.Element {
                     {startActionLabel}
                   </Text>
                 </Pressable>
-
                 {hasStartedSession ? (
                   <Pressable
                     accessibilityLabel={UI_STRINGS.restart}
@@ -430,11 +458,7 @@ export function App(): React.JSX.Element {
                       pressed && styles.buttonPressed,
                       isBusy && styles.disabled,
                     ]}>
-                    <Text
-                      style={[
-                        styles.secondaryButtonText,
-                        isDarkMode && styles.textDark,
-                      ]}>
+                    <Text style={[styles.secondaryButtonText, isDarkMode && styles.textDark]}>
                       {UI_STRINGS.restart}
                     </Text>
                   </Pressable>
@@ -446,105 +470,102 @@ export function App(): React.JSX.Element {
 
         {screen === 'reader' && snapshot ? (
           <View style={styles.screen}>
-            <View style={[styles.readerHeader, isDarkMode && styles.headerDark]}>
-              <Pressable
-                accessibilityLabel={UI_STRINGS.returnToStart}
-                accessibilityRole="button"
-                disabled={isBusy}
-                hitSlop={8}
-                onPress={exitStory}
-                style={({pressed}) => [
-                  styles.headerAction,
-                  pressed && styles.buttonPressed,
-                  isBusy && styles.disabled,
-                ]}>
-                <Text style={[styles.headerActionText, isDarkMode && styles.textDark]}>
-                  ← {UI_STRINGS.returnToStart}
-                </Text>
-              </Pressable>
-              <Text style={[styles.readerTitle, isDarkMode && styles.textDark]}>
-                {readerMode === 'pages'
-                  ? UI_STRINGS.readerModePages
-                  : UI_STRINGS.readerModeFeed}
-              </Text>
-            </View>
-
+            {renderHeader(
+              readerMode === 'pages' ? UI_STRINGS.readerModePages : UI_STRINGS.readerModeFeed,
+            )}
             {notice ? (
-              <Text style={[styles.readerNotice, isDarkMode && styles.noticeDark]}>
-                {notice}
-              </Text>
+              <Text style={[styles.readerNotice, isDarkMode && styles.noticeDark]}>{notice}</Text>
             ) : null}
 
             {readerMode === 'pages' ? (
               <View style={styles.pageReaderContent}>
                 <View
-                  accessibilityLabel="Текст текущей страницы"
+                  onLayout={(event: LayoutChangeEvent) => {
+                    setPageHeight(event.nativeEvent.layout.height);
+                  }}
                   style={[
-                    styles.storySurface,
-                    styles.pageStorySurface,
+                    styles.pageBody,
                     isDarkMode && styles.storySurfaceDark,
                   ]}>
-                  <Text style={[styles.storyPassage, isDarkMode && styles.textDark]}>
-                    {snapshot.pageText}
+                  <Text
+                    onTextLayout={(event: NativeSyntheticEvent<TextLayoutEventData>) => {
+                      const lines = event.nativeEvent.lines.map(line => line.text);
+                      setMeasuredLines(previous =>
+                        sameLines(previous, lines) ? previous : lines,
+                      );
+                    }}
+                    style={[styles.measureText, styles.storyPassage]}>
+                    {snapshot.text}
                   </Text>
+
+                  {snapshot.choices.length > 0 ? (
+                    <View
+                      onLayout={(event: LayoutChangeEvent) => {
+                        setChoiceHeight(event.nativeEvent.layout.height);
+                      }}
+                      pointerEvents="none"
+                      style={styles.measureChoices}>
+                      {snapshot.choices.map(choice => (
+                        <View key={choice.index} style={styles.choice}>
+                          <Text style={styles.choiceText}>{choice.text}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+
+                  <Text style={[styles.storyPassage, isDarkMode && styles.textDark]}>
+                    {pageTexts[effectivePageIndex] ?? snapshot.text}
+                  </Text>
+                  {isChoicePage ? renderChoices() : null}
                 </View>
 
-                <Text style={[styles.pageCounter, isDarkMode && styles.textMutedDark]}>
-                  {UI_STRINGS.pageLabel} {snapshot.pageIndex + 1}/{snapshot.pageCount}
-                </Text>
+                <View style={styles.pageFooter}>
+                  <Pressable
+                    accessibilityLabel={UI_STRINGS.previousPage}
+                    accessibilityRole="button"
+                    disabled={isBusy || effectivePageIndex === 0}
+                    onPress={() => {
+                      moveToPage(effectivePageIndex - 1);
+                    }}
+                    style={({pressed}) => [
+                      styles.pageNavButton,
+                      isDarkMode && styles.secondaryButtonDark,
+                      pressed && styles.buttonPressed,
+                      (isBusy || effectivePageIndex === 0) && styles.disabled,
+                    ]}>
+                    <Text style={[styles.pageNavText, isDarkMode && styles.textDark]}>
+                      ← {UI_STRINGS.previousPage}
+                    </Text>
+                  </Pressable>
 
-                {snapshot.hasNextPage ? (
+                  <Text style={[styles.pageCounter, isDarkMode && styles.textMutedDark]}>
+                    {effectivePageIndex + 1}/{pageTexts.length}
+                  </Text>
+
                   <Pressable
                     accessibilityLabel={UI_STRINGS.nextPage}
                     accessibilityRole="button"
-                    disabled={isBusy}
+                    disabled={isBusy || effectivePageIndex >= pageTexts.length - 1}
                     onPress={() => {
-                      void nextPage();
+                      moveToPage(effectivePageIndex + 1);
                     }}
                     style={({pressed}) => [
-                      styles.primaryButton,
-                      isDarkMode && styles.primaryButtonDark,
+                      styles.pageNavButton,
+                      isDarkMode && styles.secondaryButtonDark,
                       pressed && styles.buttonPressed,
-                      isBusy && styles.disabled,
+                      (isBusy || effectivePageIndex >= pageTexts.length - 1) && styles.disabled,
                     ]}>
-                    <Text
-                      style={[
-                        styles.primaryButtonText,
-                        isDarkMode && styles.primaryButtonTextDark,
-                      ]}>
-                      {UI_STRINGS.nextPage}
+                    <Text style={[styles.pageNavText, isDarkMode && styles.textDark]}>
+                      {UI_STRINGS.nextPage} →
                     </Text>
                   </Pressable>
-                ) : (
-                  renderChoices()
-                )}
-
-                <Pressable
-                  accessibilityLabel={UI_STRINGS.restart}
-                  accessibilityRole="button"
-                  disabled={isBusy}
-                  onPress={requestRestart}
-                  style={({pressed}) => [
-                    styles.readerRestart,
-                    pressed && styles.buttonPressed,
-                    isBusy && styles.disabled,
-                  ]}>
-                  <Text
-                    style={[
-                      styles.readerRestartText,
-                      isDarkMode && styles.textMutedDark,
-                    ]}>
-                    {UI_STRINGS.restart}
-                  </Text>
-                </Pressable>
+                </View>
               </View>
             ) : (
               <ScrollView
                 contentContainerStyle={styles.readerContent}
                 style={styles.readerScroll}>
-                <View
-                  accessibilityLabel="Текст истории"
-                  style={[styles.storySurface, isDarkMode && styles.storySurfaceDark]}>
+                <View style={[styles.storySurface, isDarkMode && styles.storySurfaceDark]}>
                   {snapshot.passages.map((passage, index) => (
                     <Text
                       key={`${index}-${passage.slice(0, 24)}`}
@@ -557,100 +578,75 @@ export function App(): React.JSX.Element {
                     </Text>
                   ))}
                 </View>
-
                 {renderChoices()}
-
-                <Pressable
-                  accessibilityLabel={UI_STRINGS.restart}
-                  accessibilityRole="button"
-                  disabled={isBusy}
-                  onPress={requestRestart}
-                  style={({pressed}) => [
-                    styles.readerRestart,
-                    pressed && styles.buttonPressed,
-                    isBusy && styles.disabled,
-                  ]}>
-                  <Text
-                    style={[
-                      styles.readerRestartText,
-                      isDarkMode && styles.textMutedDark,
-                    ]}>
-                    {UI_STRINGS.restart}
-                  </Text>
-                </Pressable>
               </ScrollView>
             )}
           </View>
         ) : null}
 
         {screen === 'ending' && snapshot ? (
-          <View style={[styles.screen, styles.endingContent]}>
-            <Text style={[styles.endingEyebrow, isDarkMode && styles.textMutedDark]}>
-              {UI_STRINGS.endingLabel}
-            </Text>
-            <Text style={[styles.endingId, isDarkMode && styles.textDark]}>
-              {snapshot.endingId ?? 'unknown'}
-            </Text>
-            <Text style={[styles.finalTextLabel, isDarkMode && styles.textMutedDark]}>
-              {UI_STRINGS.finalTextLabel}
-            </Text>
-            <View style={[styles.storySurface, isDarkMode && styles.storySurfaceDark]}>
-              <Text style={[styles.storyPassage, isDarkMode && styles.textDark]}>
-                {snapshot.text}
+          <View style={styles.screen}>
+            {renderHeader(UI_STRINGS.endingLabel)}
+            <View style={styles.endingContent}>
+              <Text style={[styles.endingId, isDarkMode && styles.textDark]}>
+                {snapshot.endingId ?? 'unknown'}
               </Text>
-            </View>
-
-            {notice ? (
-              <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>
-                {notice}
+              <Text style={[styles.finalTextLabel, isDarkMode && styles.textMutedDark]}>
+                {UI_STRINGS.finalTextLabel}
               </Text>
-            ) : null}
-
-            <View style={styles.endingActions}>
-              <Pressable
-                accessibilityLabel={UI_STRINGS.restart}
-                accessibilityRole="button"
-                disabled={isBusy}
-                onPress={requestRestart}
-                style={({pressed}) => [
-                  styles.primaryButton,
-                  isDarkMode && styles.primaryButtonDark,
-                  pressed && styles.buttonPressed,
-                  isBusy && styles.disabled,
-                ]}>
-                <Text
-                  style={[
-                    styles.primaryButtonText,
-                    isDarkMode && styles.primaryButtonTextDark,
-                  ]}>
-                  {UI_STRINGS.restart}
+              <View style={[styles.storySurface, isDarkMode && styles.storySurfaceDark]}>
+                <Text style={[styles.storyPassage, isDarkMode && styles.textDark]}>
+                  {snapshot.text}
                 </Text>
-              </Pressable>
-              <Pressable
-                accessibilityLabel={UI_STRINGS.exitStory}
-                accessibilityRole="button"
-                disabled={isBusy}
-                onPress={exitStory}
-                style={({pressed}) => [
-                  styles.secondaryButton,
-                  isDarkMode && styles.secondaryButtonDark,
-                  pressed && styles.buttonPressed,
-                  isBusy && styles.disabled,
-                ]}>
-                <Text
-                  style={[
-                    styles.secondaryButtonText,
-                    isDarkMode && styles.textDark,
-                  ]}>
-                  {UI_STRINGS.exitStory}
-                </Text>
-              </Pressable>
+              </View>
+              {notice ? (
+                <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>{notice}</Text>
+              ) : null}
             </View>
           </View>
         ) : null}
       </SafeAreaView>
     </SafeAreaProvider>
   );
+}
+
+function paginateMeasuredLines(
+  measuredLines: readonly string[],
+  fallbackText: string,
+  pageHeight: number,
+  choiceHeight: number,
+): string[] {
+  if (measuredLines.length === 0 || pageHeight <= 0) {
+    return [fallbackText];
+  }
+
+  const normalCapacity = Math.max(1, Math.floor(pageHeight / STORY_LINE_HEIGHT));
+  const choiceCapacity =
+    choiceHeight > 0
+      ? Math.max(
+          1,
+          Math.floor((pageHeight - choiceHeight - PAGE_GAP) / STORY_LINE_HEIGHT),
+        )
+      : normalCapacity;
+
+  if (measuredLines.length <= choiceCapacity) {
+    return [measuredLines.join('\n')];
+  }
+
+  const pages: string[] = [];
+  const finalStart = Math.max(0, measuredLines.length - choiceCapacity);
+  const prefix = measuredLines.slice(0, finalStart);
+
+  for (let index = 0; index < prefix.length; index += normalCapacity) {
+    pages.push(prefix.slice(index, index + normalCapacity).join('\n'));
+  }
+
+  pages.push(measuredLines.slice(finalStart).join('\n'));
+  return pages;
+}
+
+function sameLines(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((line, index) => line === right[index]);
 }
 
 function recoveryMessage(recovery: StorySessionRecovery | null): string | null {
@@ -667,50 +663,16 @@ function recoveryMessage(recovery: StorySessionRecovery | null): string | null {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
-  safeAreaDark: {
-    backgroundColor: '#111111',
-  },
-  screen: {
-    flex: 1,
-  },
-  startContent: {
-    justifyContent: 'center',
-    padding: 24,
-    gap: 14,
-  },
-  title: {
-    fontSize: 30,
-    lineHeight: 36,
-    fontWeight: '700',
-    color: '#111111',
-  },
-  status: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: '#666666',
-  },
-  description: {
-    fontSize: 16,
-    lineHeight: 23,
-    color: '#555555',
-  },
-  modeBlock: {
-    gap: 8,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '600',
-    color: '#666666',
-  },
-  modeSelector: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  safeArea: {flex: 1, backgroundColor: '#ffffff'},
+  safeAreaDark: {backgroundColor: '#111111'},
+  screen: {flex: 1},
+  startContent: {justifyContent: 'center', padding: 24, gap: 14},
+  title: {fontSize: 30, lineHeight: 36, fontWeight: '700', color: '#111111'},
+  status: {fontSize: 13, lineHeight: 18, color: '#666666'},
+  description: {fontSize: 16, lineHeight: 23, color: '#555555'},
+  modeBlock: {gap: 8},
+  sectionLabel: {fontSize: 13, lineHeight: 18, fontWeight: '600', color: '#666666'},
+  modeSelector: {flexDirection: 'row', gap: 8},
   modeButton: {
     flex: 1,
     minHeight: 44,
@@ -721,29 +683,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
   },
-  modeButtonDark: {
-    borderColor: '#555555',
-  },
-  modeButtonSelected: {
-    borderWidth: 2,
-    borderColor: '#111111',
-  },
-  modeButtonSelectedDark: {
-    borderColor: '#ffffff',
-  },
-  modeButtonText: {
-    fontSize: 15,
-    lineHeight: 20,
-    color: '#222222',
-  },
-  modeButtonTextSelected: {
-    fontWeight: '700',
-  },
-  modeHint: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: '#666666',
-  },
+  modeButtonDark: {borderColor: '#555555'},
+  modeButtonSelected: {borderWidth: 2, borderColor: '#111111'},
+  modeButtonSelectedDark: {borderColor: '#ffffff'},
+  modeButtonText: {fontSize: 15, lineHeight: 20, color: '#222222'},
+  modeButtonTextSelected: {fontWeight: '700'},
+  modeHint: {fontSize: 13, lineHeight: 18, color: '#666666'},
   notice: {
     borderRadius: 8,
     padding: 10,
@@ -752,17 +697,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  noticeDark: {
-    backgroundColor: '#252525',
-    color: '#eeeeee',
-  },
-  loading: {
-    fontSize: 15,
-    color: '#222222',
-  },
-  startActions: {
-    gap: 10,
-  },
+  noticeDark: {backgroundColor: '#252525', color: '#eeeeee'},
+  loading: {fontSize: 15, color: '#222222'},
+  startActions: {gap: 10},
   primaryButton: {
     minHeight: 52,
     alignItems: 'center',
@@ -771,9 +708,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     backgroundColor: '#111111',
   },
-  primaryButtonDark: {
-    backgroundColor: '#f0f0f0',
-  },
+  primaryButtonDark: {backgroundColor: '#f0f0f0'},
   primaryButtonText: {
     fontSize: 16,
     lineHeight: 22,
@@ -781,9 +716,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     textAlign: 'center',
   },
-  primaryButtonTextDark: {
-    color: '#111111',
-  },
+  primaryButtonTextDark: {color: '#111111'},
   secondaryButton: {
     minHeight: 48,
     alignItems: 'center',
@@ -793,50 +726,28 @@ const styles = StyleSheet.create({
     borderColor: '#cccccc',
     paddingHorizontal: 18,
   },
-  secondaryButtonDark: {
-    borderColor: '#555555',
-  },
-  secondaryButtonText: {
-    fontSize: 15,
-    lineHeight: 21,
-    color: '#222222',
-  },
-  buttonPressed: {
-    opacity: 0.65,
-  },
-  disabled: {
-    opacity: 0.45,
-  },
+  secondaryButtonDark: {borderColor: '#555555'},
+  secondaryButtonText: {fontSize: 15, lineHeight: 21, color: '#222222'},
+  buttonPressed: {opacity: 0.65},
+  disabled: {opacity: 0.4},
   readerHeader: {
     minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#e4e4e4',
   },
-  headerDark: {
-    borderBottomColor: '#333333',
-  },
-  headerAction: {
+  headerDark: {borderBottomColor: '#333333'},
+  readerTitle: {fontSize: 15, lineHeight: 20, fontWeight: '600', color: '#222222'},
+  menuButton: {
+    width: 44,
     minHeight: 44,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  headerActionText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#222222',
-  },
-  readerTitle: {
-    flexShrink: 1,
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '600',
-    color: '#222222',
-    textAlign: 'right',
-  },
+  menuButtonText: {fontSize: 28, lineHeight: 30, color: '#222222'},
   readerNotice: {
     marginHorizontal: 16,
     marginTop: 10,
@@ -847,19 +758,53 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  pageReaderContent: {
+  pageReaderContent: {flex: 1, padding: 16, gap: 10},
+  pageBody: {
     flex: 1,
-    padding: 16,
-    gap: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 14,
+    padding: 18,
+    backgroundColor: '#fafafa',
+    gap: PAGE_GAP,
   },
-  readerScroll: {
-    flex: 1,
+  measureText: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    top: 18,
+    opacity: 0,
   },
-  readerContent: {
-    padding: 16,
-    gap: 16,
-    paddingBottom: 28,
+  measureChoices: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    bottom: 18,
+    opacity: 0,
+    gap: 8,
   },
+  pageFooter: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  pageNavButton: {
+    minHeight: 44,
+    minWidth: 112,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#cccccc',
+    paddingHorizontal: 12,
+  },
+  pageNavText: {fontSize: 14, lineHeight: 20, fontWeight: '600', color: '#222222'},
+  pageCounter: {fontSize: 13, lineHeight: 18, color: '#666666', textAlign: 'center'},
+  readerScroll: {flex: 1},
+  readerContent: {padding: 16, gap: 16, paddingBottom: 28},
   storySurface: {
     borderWidth: 1,
     borderColor: '#e0e0e0',
@@ -867,31 +812,10 @@ const styles = StyleSheet.create({
     padding: 18,
     backgroundColor: '#fafafa',
   },
-  storySurfaceDark: {
-    borderColor: '#333333',
-    backgroundColor: '#1b1b1b',
-  },
-  pageStorySurface: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  storyPassage: {
-    fontSize: 18,
-    lineHeight: 28,
-    color: '#171717',
-  },
-  storyPassageSpacing: {
-    marginTop: 18,
-  },
-  pageCounter: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: '#666666',
-    textAlign: 'center',
-  },
-  choicesZone: {
-    gap: 8,
-  },
+  storySurfaceDark: {borderColor: '#333333', backgroundColor: '#1b1b1b'},
+  storyPassage: {fontSize: 18, lineHeight: STORY_LINE_HEIGHT, color: '#171717'},
+  storyPassageSpacing: {marginTop: 18},
+  choicesZone: {gap: 8},
   choice: {
     minHeight: 52,
     justifyContent: 'center',
@@ -902,55 +826,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: '#ffffff',
   },
-  choiceDark: {
-    borderColor: '#444444',
-    backgroundColor: '#1a1a1a',
-  },
-  choiceText: {
-    fontSize: 16,
-    lineHeight: 22,
-    color: '#222222',
-  },
-  readerRestart: {
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  readerRestartText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#666666',
-  },
-  endingContent: {
-    justifyContent: 'center',
-    padding: 24,
-    gap: 12,
-  },
-  endingEyebrow: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '600',
-    color: '#666666',
-  },
-  endingId: {
-    fontSize: 26,
-    lineHeight: 32,
-    fontWeight: '700',
-    color: '#111111',
-  },
-  finalTextLabel: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: '#666666',
-  },
-  endingActions: {
-    gap: 10,
-  },
-  textDark: {
-    color: '#f3f3f3',
-  },
-  textMutedDark: {
-    color: '#b8b8b8',
-  },
+  choiceDark: {borderColor: '#444444', backgroundColor: '#1a1a1a'},
+  choiceText: {fontSize: 16, lineHeight: 22, color: '#222222'},
+  endingContent: {flex: 1, justifyContent: 'center', padding: 24, gap: 12},
+  endingId: {fontSize: 26, lineHeight: 32, fontWeight: '700', color: '#111111'},
+  finalTextLabel: {fontSize: 13, lineHeight: 18, color: '#666666'},
+  textDark: {color: '#f3f3f3'},
+  textMutedDark: {color: '#b8b8b8'},
 });

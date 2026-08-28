@@ -23,28 +23,36 @@ function startStory(): {
 }
 
 describe('InkStoryRuntime packaged story', () => {
-  test('choice A reaches ending_a through the Ink conditional branch', () => {
+  test('first branch reaches a second decision and then ending_eye', () => {
     const {runtime, snapshot} = startStory();
 
     expect(snapshot.isEnded).toBe(false);
     expect(snapshot.choices).toHaveLength(2);
 
-    const result = runtime.choose(snapshot.choices[0].index);
+    const nearDoor = runtime.choose(snapshot.choices[0].index);
+    expect(nearDoor.isEnded).toBe(false);
+    expect(nearDoor.choices).toHaveLength(3);
+    expect(nearDoor.text).toContain('прихожей');
 
+    const result = runtime.choose(nearDoor.choices[0].index);
     expect(result.isEnded).toBe(true);
     expect(result.choices).toHaveLength(0);
-    expect(result.endingId).toBe('ending_a');
-    expect(result.text).toContain('выходишь в коридор');
+    expect(result.endingId).toBe('ending_eye');
+    expect(result.text).toContain('мутный глаз');
   });
 
-  test('choice B reaches a different terminal ending', () => {
+  test('second initial branch reaches ending_light', () => {
     const {runtime, snapshot} = startStory();
-    const result = runtime.choose(snapshot.choices[1].index);
+    const stayBed = runtime.choose(snapshot.choices[1].index);
 
+    expect(stayBed.isEnded).toBe(false);
+    expect(stayBed.choices).toHaveLength(2);
+
+    const result = runtime.choose(stayBed.choices[1].index);
     expect(result.isEnded).toBe(true);
     expect(result.choices).toHaveLength(0);
-    expect(result.endingId).toBe('ending_b');
-    expect(result.text).toContain('остаёшься внутри');
+    expect(result.endingId).toBe('ending_light');
+    expect(result.text).toContain('Яркая прихожая');
   });
 
   test('Ink state is serializable and can be restored before a choice', () => {
@@ -60,6 +68,7 @@ describe('InkStoryRuntime packaged story', () => {
     expect(restoredSnapshot.choices).toEqual(snapshot.choices);
 
     const result = restoredRuntime.choose(restoredSnapshot.choices[1].index);
-    expect(result.endingId).toBe('ending_b');
+    expect(result.isEnded).toBe(false);
+    expect(result.choices).toHaveLength(2);
   });
 });
