@@ -36,6 +36,7 @@ const MIN_CHOICE_PAGE_LINES = 3;
 const CHOICE_ROW_RESERVE = 72;
 const CHOICE_GAP = 8;
 const PARAGRAPH_INDENT = '\u2003\u2003';
+const PARAGRAPH_BREAK_MARKER = '\uE000';
 const ZERO_WIDTH_SPACE = '\u200B';
 const EMPTY_LINES: readonly string[] = [];
 
@@ -348,9 +349,13 @@ export function App(): React.JSX.Element {
     measurementReady &&
     Boolean(snapshot?.choices.length) &&
     effectivePageIndex === pages.length - 1;
-  const visiblePageText = measurementReady
-    ? pages[effectivePageIndex]?.join('\n') ?? readerText
-    : readerText;
+  const visiblePageParagraphs = useMemo(
+    () =>
+      measurementReady
+        ? pageLinesToParagraphs(pages[effectivePageIndex] ?? EMPTY_LINES)
+        : currentParagraphs.map(indentParagraph),
+    [currentParagraphs, effectivePageIndex, measurementReady, pages],
+  );
 
   const recordMeasuredLines = (
     callbackKey: string,
@@ -668,9 +673,13 @@ export function App(): React.JSX.Element {
                       styles.pageTextArea,
                       isChoicePage && {paddingBottom: choiceReserve + PAGE_GAP},
                     ]}>
-                    <Text style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
-                      {visiblePageText}
-                    </Text>
+                    {visiblePageParagraphs.map((paragraph, index) => (
+                      <Text
+                        key={`page-${effectivePageIndex}-${index}`}
+                        style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
+                        {paragraph}
+                      </Text>
+                    ))}
                   </View>
 
                   <View
@@ -757,22 +766,62 @@ export function App(): React.JSX.Element {
           <View style={styles.screen}>
             {renderHeader()}
             <View style={styles.endingContent}>
-              <Text style={[styles.endingId, isDarkMode && styles.textDark]}>
-                {snapshot.endingId ?? 'unknown'}
-              </Text>
-              <Text style={[styles.finalTextLabel, isDarkMode && styles.textMutedDark]}>
-                {UI_STRINGS.finalTextLabel}
-              </Text>
-              {splitParagraphs(snapshot.text).map((paragraph, index) => (
-                <Text
-                  key={`ending-${index}`}
-                  style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
-                  {indentParagraph(paragraph)}
+              <View style={styles.endingBody}>
+                <Text style={[styles.endingId, isDarkMode && styles.textDark]}>
+                  {snapshot.endingId ?? 'unknown'}
                 </Text>
-              ))}
-              {notice ? (
-                <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>{notice}</Text>
-              ) : null}
+                <Text style={[styles.finalTextLabel, isDarkMode && styles.textMutedDark]}>
+                  {UI_STRINGS.finalTextLabel}
+                </Text>
+                {splitParagraphs(snapshot.text).map((paragraph, index) => (
+                  <Text
+                    key={`ending-${index}`}
+                    style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
+                    {indentParagraph(paragraph)}
+                  </Text>
+                ))}
+                {notice ? (
+                  <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>{notice}</Text>
+                ) : null}
+              </View>
+
+              <View style={styles.endingActions}>
+                <Pressable
+                  accessibilityLabel={UI_STRINGS.endingRestart}
+                  accessibilityRole="button"
+                  disabled={isBusy}
+                  onPress={() => restart(true)}
+                  style={({pressed}) => [
+                    styles.endingPrimaryAction,
+                    isDarkMode && styles.primaryButtonDark,
+                    pressed && styles.buttonPressed,
+                    isBusy && styles.disabled,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.primaryButtonText,
+                      isDarkMode && styles.primaryButtonTextDark,
+                    ]}>
+                    {UI_STRINGS.endingRestart}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityLabel={UI_STRINGS.endingMenu}
+                  accessibilityRole="button"
+                  disabled={isBusy}
+                  onPress={exitStory}
+                  style={({pressed}) => [
+                    styles.endingSecondaryAction,
+                    isDarkMode && styles.endingSecondaryActionDark,
+                    pressed && styles.buttonPressed,
+                    isBusy && styles.disabled,
+                  ]}>
+                  <Text style={[styles.menuActionText, isDarkMode && styles.textDark]}>
+                    {UI_STRINGS.endingMenu}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           </View>
         ) : null}
@@ -795,7 +844,52 @@ function indentParagraph(paragraph: string): string {
 }
 
 function normalizeMeasuredLine(line: string): string {
-  return line.replace(/[\r\n]/g, '').split(ZERO_WIDTH_SPACE).join('');
+  const hasParagraphBreak = /[\r\n]/.test(line);
+  const normalized = line
+    .replace(/[\r\n]/g, '')
+    .split(ZERO_WIDTH_SPACE)
+    .join('');
+
+  return hasParagraphBreak
+    ? `${normalized}${PARAGRAPH_BREAK_MARKER}`
+    : normalized;
+}
+
+function pageLinesToParagraphs(lines: readonly string[]): string[] {
+  const paragraphs: string[] = [];
+  let current = '';
+
+  for (const rawLine of lines) {
+    const hasExplicitBreak = rawLine.endsWith(PARAGRAPH_BREAK_MARKER);
+    const line = rawLine.split(PARAGRAPH_BREAK_MARKER).join('').trimEnd();
+
+    if (line.length === 0) {
+      if (current.length > 0) {
+        paragraphs.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    const startsParagraph = line.startsWith(PARAGRAPH_INDENT);
+    if (startsParagraph && current.length > 0) {
+      paragraphs.push(current);
+      current = line;
+    } else {
+      current = current.length > 0 ? `${current} ${line}` : line;
+    }
+
+    if (hasExplicitBreak && current.length > 0) {
+      paragraphs.push(current);
+      current = '';
+    }
+  }
+
+  if (current.length > 0) {
+    paragraphs.push(current);
+  }
+
+  return paragraphs;
 }
 
 function getChoiceReserve(choiceCount: number): number {
@@ -1051,7 +1145,38 @@ const styles = StyleSheet.create({
   },
   choiceDark: {borderColor: '#444444', backgroundColor: '#171717'},
   choiceText: {fontSize: 16, lineHeight: 22, color: '#222222'},
-  endingContent: {flex: 1, justifyContent: 'center', paddingHorizontal: 24, gap: 8},
+  endingContent: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 12,
+  },
+  endingBody: {flex: 1, justifyContent: 'center', gap: 8},
+  endingActions: {flexDirection: 'row', gap: 10, paddingTop: 12},
+  endingPrimaryAction: {
+    flex: 1,
+    minHeight: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    backgroundColor: '#111111',
+  },
+  endingSecondaryAction: {
+    flex: 1,
+    minHeight: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
+    paddingHorizontal: 12,
+    backgroundColor: '#ffffff',
+  },
+  endingSecondaryActionDark: {
+    borderColor: '#444444',
+    backgroundColor: '#171717',
+  },
   endingId: {fontSize: 26, lineHeight: 32, fontWeight: '700', color: '#111111'},
   finalTextLabel: {fontSize: 13, lineHeight: 18, color: '#666666', marginBottom: 6},
   menuBackdrop: {
