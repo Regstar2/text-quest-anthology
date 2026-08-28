@@ -8,6 +8,7 @@ export interface AdsConfig {
   bannerLayout: {
     heightRatio: number;
     minHeight: number;
+    maxHeight: number;
   };
   bannerFrequency: {
     pagesPerBanner: number;
@@ -26,8 +27,9 @@ export const ADS_CONFIG: AdsConfig = {
     interstitial: 'demo-interstitial-yandex',
   },
   bannerLayout: {
-    heightRatio: 0.08,
-    minHeight: 50,
+    heightRatio: 0.14,
+    minHeight: 96,
+    maxHeight: 120,
   },
   bannerFrequency: {
     pagesPerBanner: 3,
