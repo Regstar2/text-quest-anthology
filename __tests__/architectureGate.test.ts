@@ -12,15 +12,32 @@ function source(path: string): string {
   return fs.readFileSync(pathModule.join(processModule.cwd(), path), 'utf8');
 }
 
-describe('v0.1.7 architecture gate', () => {
-  test('application navigation does not hardcode Zavalinka as the selected story', () => {
-    const app = source('src/app/App.tsx');
+describe('v0.1.8 architecture gate', () => {
+  test('application navigation remains data-driven and story-agnostic', () => {
+    const app = source('src/app/AppV018.tsx');
 
     expect(app).toContain('storyLoader.listMetadata()');
     expect(app).toContain('storyLoader.load(storyId)');
     expect(app).not.toContain('DEFAULT_STORY');
     expect(app).not.toContain("storyId === 'zavalinka'");
     expect(app).not.toContain('storyId === "zavalinka"');
+  });
+
+  test('reader preferences and ending history stay outside Ink state', () => {
+    const app = source('src/app/AppV018.tsx');
+    const session = source('src/narrative/StorySession.ts');
+
+    expect(app).toContain('readerPreferencesRepository');
+    expect(app).toContain('unlockedEndingsRepository');
+    expect(session).not.toMatch(/ReaderPreferences|UnlockedEndings/i);
+  });
+
+  test('locked choices are rendered from runtime state without story-specific conditions', () => {
+    const app = source('src/app/AppV018.tsx');
+
+    expect(app).toContain('choice.enabled');
+    expect(app).toContain('🔒');
+    expect(app).not.toMatch(/gas|pipe|чердак|zavalinka/i);
   });
 
   test('narrative and persistence core do not depend on ad or store SDKs', () => {
