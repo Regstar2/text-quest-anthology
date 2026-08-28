@@ -3,6 +3,7 @@ import type {StoryManifestEntry} from './StoryMetadata';
 import {
   StorySaveRepository,
   type StorySave,
+  type StorySaveLoadResult,
 } from '../persistence/StorySaveRepository';
 
 export type StorySessionRecovery =
@@ -49,7 +50,7 @@ export class StorySession {
     repository: StorySaveRepository,
     clock: Clock = systemClock,
   ): Promise<StorySessionOpenResult> {
-    let loadResult;
+    let loadResult: StorySaveLoadResult;
 
     try {
       loadResult = await repository.load(storyPackage.metadata.id);
