@@ -6,9 +6,7 @@ import type {
   InterstitialPlacement,
 } from '../AdsProvider';
 
-function NoAdsBanner(_props: AdsBannerProps): React.JSX.Element | null {
-  return null;
-}
+const NoAdsBanner: React.ComponentType<AdsBannerProps> = () => null;
 
 export class NoAdsProvider implements AdsProvider {
   readonly Banner = NoAdsBanner;
