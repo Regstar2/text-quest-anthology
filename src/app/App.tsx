@@ -33,32 +33,19 @@ const PAGE_GAP = 12;
 const PAGE_VERTICAL_PADDING = 12;
 const PAGINATION_SAFETY_LINES = 2;
 const MIN_CHOICE_PAGE_LINES = 3;
+const CHOICE_ROW_RESERVE = 72;
+const CHOICE_GAP = 8;
 const PARAGRAPH_INDENT = '\u2003\u2003';
-const EMPTY_PARAGRAPH_LINES: Readonly<Record<number, readonly string[]>> = {};
+const ZERO_WIDTH_SPACE = '\u200B';
+const EMPTY_LINES: readonly string[] = [];
 
 type AppScreen = 'start' | 'reader' | 'ending';
 type ReaderMode = 'pages' | 'feed';
 type MenuView = 'menu' | 'restart' | null;
 
-type MeasuredLine = Readonly<{
-  paragraphIndex: number;
-  lineIndex: number;
-  text: string;
-}>;
-
-type PageSegment = Readonly<{
-  paragraphIndex: number;
-  text: string;
-}>;
-
-type ReaderPage = Readonly<{
-  segments: readonly PageSegment[];
-}>;
-
 type ReaderMeasurement = Readonly<{
   key: string;
-  paragraphLines: Readonly<Record<number, readonly string[]>>;
-  choiceHeight: number;
+  lines: readonly string[];
 }>;
 
 if (!DEFAULT_STORY) {
@@ -66,11 +53,7 @@ if (!DEFAULT_STORY) {
 }
 
 const DEFAULT_STORY_PACKAGE = storyLoader.load(DEFAULT_STORY.id);
-const EMPTY_MEASUREMENT: ReaderMeasurement = {
-  key: '',
-  paragraphLines: EMPTY_PARAGRAPH_LINES,
-  choiceHeight: 0,
-};
+const EMPTY_MEASUREMENT: ReaderMeasurement = {key: '', lines: EMPTY_LINES};
 
 export function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
@@ -159,16 +142,6 @@ export function App(): React.JSX.Element {
     };
   }, []);
 
-  const measurementKey = useMemo(
-    () =>
-      `${readerRevision}\u0000${snapshot?.text ?? ''}\u0001${
-        snapshot?.choices.map(choice => `${choice.index}:${choice.text}`).join('\u0002') ?? ''
-      }`,
-    [readerRevision, snapshot?.choices, snapshot?.text],
-  );
-
-  measurementKeyRef.current = measurementKey;
-
   useEffect(() => {
     const onAppStateChange = (nextState: AppStateStatus) => {
       if (nextState === 'active') {
@@ -230,6 +203,7 @@ export function App(): React.JSX.Element {
         setHasStartedSession(true);
         setNotice(persisted ? null : UI_STRINGS.saveFailed);
       }
+      setReaderRevision(previous => previous + 1);
       setScreen(snapshot.isEnded ? 'ending' : 'reader');
     } catch {
       setNotice(UI_STRINGS.storyActionFailed);
@@ -343,39 +317,27 @@ export function App(): React.JSX.Element {
     () => splitParagraphs(snapshot?.text ?? ''),
     [snapshot?.text],
   );
-
-  const activeParagraphLines =
-    measurement.key === measurementKey
-      ? measurement.paragraphLines
-      : EMPTY_PARAGRAPH_LINES;
-  const activeChoiceHeight =
-    measurement.key === measurementKey ? measurement.choiceHeight : 0;
-
-  const paragraphsMeasured = currentParagraphs.every(
-    (_paragraph, index) => (activeParagraphLines[index]?.length ?? 0) > 0,
+  const readerText = useMemo(
+    () => currentParagraphs.map(indentParagraph).join('\n'),
+    [currentParagraphs],
   );
-  const choicesMeasured = !snapshot?.choices.length || activeChoiceHeight > 0;
-  const measurementReady =
-    pageHeight > 0 && currentParagraphs.length > 0 && paragraphsMeasured && choicesMeasured;
+  const measurementKey = `${readerRevision}\u0000${readerText}`;
+  const measurementText =
+    readerRevision % 2 === 0 ? readerText : `${readerText}${ZERO_WIDTH_SPACE}`;
+
+  measurementKeyRef.current = measurementKey;
+
+  const activeLines =
+    measurement.key === measurementKey ? measurement.lines : EMPTY_LINES;
+  const measurementReady = pageHeight > 0 && activeLines.length > 0;
+  const choiceReserve = getChoiceReserve(snapshot?.choices.length ?? 0);
 
   const pages = useMemo(
     () =>
       measurementReady
-        ? paginateParagraphs(
-            currentParagraphs,
-            activeParagraphLines,
-            pageHeight,
-            snapshot?.choices.length ? activeChoiceHeight : 0,
-          )
+        ? paginateLines(activeLines, pageHeight, choiceReserve)
         : [],
-    [
-      activeChoiceHeight,
-      activeParagraphLines,
-      currentParagraphs,
-      measurementReady,
-      pageHeight,
-      snapshot?.choices.length,
-    ],
+    [activeLines, choiceReserve, measurementReady, pageHeight],
   );
 
   const effectivePageIndex =
@@ -386,57 +348,27 @@ export function App(): React.JSX.Element {
     measurementReady &&
     Boolean(snapshot?.choices.length) &&
     effectivePageIndex === pages.length - 1;
+  const visiblePageText = measurementReady
+    ? pages[effectivePageIndex]?.join('\n') ?? readerText
+    : readerText;
 
-  const recordParagraphLines = (
+  const recordMeasuredLines = (
     callbackKey: string,
-    paragraphIndex: number,
     lines: readonly string[],
   ) => {
-    if (measurementKeyRef.current !== callbackKey) {
+    if (measurementKeyRef.current !== callbackKey || lines.length === 0) {
       return;
     }
 
     setMeasurement(previous => {
-      const current: ReaderMeasurement =
-        previous.key === callbackKey
-          ? previous
-          : {key: callbackKey, paragraphLines: EMPTY_PARAGRAPH_LINES, choiceHeight: 0};
-      const existing = current.paragraphLines[paragraphIndex] ?? [];
-
-      if (sameLines(existing, lines)) {
-        return current;
+      if (previous.key === callbackKey && sameLines(previous.lines, lines)) {
+        return previous;
       }
-
-      return {
-        ...current,
-        paragraphLines: {
-          ...current.paragraphLines,
-          [paragraphIndex]: lines,
-        },
-      };
+      return {key: callbackKey, lines};
     });
   };
 
-  const recordChoiceHeight = (callbackKey: string, height: number) => {
-    if (measurementKeyRef.current !== callbackKey) {
-      return;
-    }
-
-    setMeasurement(previous => {
-      const current: ReaderMeasurement =
-        previous.key === callbackKey
-          ? previous
-          : {key: callbackKey, paragraphLines: EMPTY_PARAGRAPH_LINES, choiceHeight: 0};
-
-      if (current.choiceHeight === height) {
-        return current;
-      }
-
-      return {...current, choiceHeight: height};
-    });
-  };
-
-  const renderChoices = () => {
+  const renderChoices = (enabled: boolean) => {
     if (!snapshot || snapshot.choices.length === 0) {
       return null;
     }
@@ -447,7 +379,7 @@ export function App(): React.JSX.Element {
           <Pressable
             accessibilityLabel={choice.text}
             accessibilityRole="button"
-            disabled={isBusy || !measurementReady}
+            disabled={isBusy || !enabled}
             key={choice.index}
             onPress={() => {
               choose(choice.index);
@@ -456,7 +388,7 @@ export function App(): React.JSX.Element {
               styles.choice,
               isDarkMode && styles.choiceDark,
               pressed && styles.buttonPressed,
-              (isBusy || !measurementReady) && styles.disabled,
+              (isBusy || !enabled) && styles.disabled,
             ]}>
             <Text style={[styles.choiceText, isDarkMode && styles.textDark]}>
               {choice.text}
@@ -714,77 +646,37 @@ export function App(): React.JSX.Element {
                     setPageHeight(event.nativeEvent.layout.height);
                   }}
                   style={styles.pageBody}>
-                  <View pointerEvents="none" style={styles.measureLayer}>
-                    {currentParagraphs.map((paragraph, paragraphIndex) => {
-                      const callbackKey = measurementKey;
-
-                      return (
-                        <Text
-                          key={`measure-${callbackKey}-${paragraphIndex}`}
-                          onTextLayout={(event: TextLayoutEvent) => {
-                            recordParagraphLines(
-                              callbackKey,
-                              paragraphIndex,
-                              event.nativeEvent.lines.map(line => line.text),
-                            );
-                          }}
-                          style={styles.storyParagraph}>
-                          {indentParagraph(paragraph)}
-                        </Text>
+                  <Text
+                    onTextLayout={(event: TextLayoutEvent) => {
+                      recordMeasuredLines(
+                        measurementKey,
+                        event.nativeEvent.lines.map(line => line.text),
                       );
-                    })}
+                    }}
+                    pointerEvents="none"
+                    style={styles.measureText}>
+                    {measurementText}
+                  </Text>
+
+                  <View
+                    style={[
+                      styles.pageTextArea,
+                      isChoicePage && {paddingBottom: choiceReserve + PAGE_GAP},
+                    ]}>
+                    <Text style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
+                      {visiblePageText}
+                    </Text>
                   </View>
 
-                  {snapshot.choices.length > 0 ? (
-                    <View
-                      key={`measure-choices-${measurementKey}`}
-                      onLayout={(event: LayoutChangeEvent) => {
-                        recordChoiceHeight(
-                          measurementKey,
-                          event.nativeEvent.layout.height,
-                        );
-                      }}
-                      pointerEvents="none"
-                      style={styles.measureChoices}>
-                      {snapshot.choices.map(choice => (
-                        <View key={choice.index} style={styles.choice}>
-                          <Text style={styles.choiceText}>{choice.text}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-
-                  {measurementReady ? (
-                    <>
-                      <View
-                        style={[
-                          styles.pageTextArea,
-                          isChoicePage && {paddingBottom: activeChoiceHeight + PAGE_GAP},
-                        ]}>
-                        {(pages[effectivePageIndex]?.segments ?? []).map((segment, index) => (
-                          <Text
-                            key={`${segment.paragraphIndex}-${index}-${segment.text.slice(0, 18)}`}
-                            style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
-                            {segment.text}
-                          </Text>
-                        ))}
-                      </View>
-
-                      {isChoicePage ? (
-                        <View style={styles.choiceDock}>{renderChoices()}</View>
-                      ) : null}
-                    </>
-                  ) : (
-                    <View style={styles.pageFallbackTextArea}>
-                      {currentParagraphs.map((paragraph, index) => (
-                        <Text
-                          key={`fallback-${measurementKey}-${index}`}
-                          style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
-                          {indentParagraph(paragraph)}
-                        </Text>
-                      ))}
-                    </View>
-                  )}
+                  <View
+                    pointerEvents={isChoicePage ? 'auto' : 'none'}
+                    style={[
+                      styles.choiceDock,
+                      {height: choiceReserve},
+                      !isChoicePage && styles.choiceDockHidden,
+                    ]}>
+                    {renderChoices(isChoicePage && measurementReady)}
+                  </View>
                 </View>
 
                 <View style={styles.pageFooter}>
@@ -850,7 +742,7 @@ export function App(): React.JSX.Element {
                     </Text>
                   ))}
                 </View>
-                {renderChoices()}
+                {renderChoices(true)}
               </ScrollView>
             )}
           </View>
@@ -897,96 +789,78 @@ function indentParagraph(paragraph: string): string {
   return `${PARAGRAPH_INDENT}${paragraph.trim()}`;
 }
 
-function paginateParagraphs(
-  paragraphs: readonly string[],
-  measuredParagraphLines: Readonly<Record<number, readonly string[]>>,
+function getChoiceReserve(choiceCount: number): number {
+  if (choiceCount <= 0) {
+    return 0;
+  }
+  return choiceCount * CHOICE_ROW_RESERVE + Math.max(0, choiceCount - 1) * CHOICE_GAP;
+}
+
+function paginateLines(
+  measuredLines: readonly string[],
   pageHeight: number,
-  choiceHeight: number,
-): ReaderPage[] {
-  const lines: MeasuredLine[] = [];
-
-  paragraphs.forEach((_paragraph, paragraphIndex) => {
-    const measuredLines = measuredParagraphLines[paragraphIndex] ?? [];
-    measuredLines.forEach((text, lineIndex) => {
-      lines.push({paragraphIndex, lineIndex, text});
-    });
-  });
-
-  if (lines.length === 0) {
+  choiceReserve: number,
+): string[][] {
+  if (measuredLines.length === 0) {
     return [];
   }
 
-  const contentHeight = Math.max(STORY_LINE_HEIGHT, pageHeight - PAGE_VERTICAL_PADDING);
-  const measuredNormalCapacity = Math.max(1, Math.floor(contentHeight / STORY_LINE_HEIGHT));
+  const contentHeight = Math.max(
+    STORY_LINE_HEIGHT,
+    pageHeight - PAGE_VERTICAL_PADDING,
+  );
+  const measuredNormalCapacity = Math.max(
+    1,
+    Math.floor(contentHeight / STORY_LINE_HEIGHT),
+  );
   const normalCapacity = Math.max(
     1,
     measuredNormalCapacity - PAGINATION_SAFETY_LINES,
   );
 
-  if (choiceHeight <= 0) {
-    return chunkLines(lines, normalCapacity).map(linePage => ({
-      segments: linesToSegments(linePage),
-    }));
+  if (choiceReserve <= 0) {
+    return chunkLines(measuredLines, normalCapacity);
   }
 
   const measuredChoiceCapacity = Math.max(
     1,
-    Math.floor((contentHeight - choiceHeight - PAGE_GAP) / STORY_LINE_HEIGHT),
+    Math.floor(
+      (contentHeight - choiceReserve - PAGE_GAP) / STORY_LINE_HEIGHT,
+    ),
   );
   const choiceCapacity = Math.max(
     1,
     measuredChoiceCapacity - PAGINATION_SAFETY_LINES,
   );
   const minimumChoiceLines = Math.min(
-    lines.length,
+    measuredLines.length,
     choiceCapacity,
     MIN_CHOICE_PAGE_LINES,
   );
 
-  const linePages: MeasuredLine[][] = [];
+  const pages: string[][] = [];
   let cursor = 0;
 
-  while (lines.length - cursor > choiceCapacity) {
-    const remaining = lines.length - cursor;
+  while (measuredLines.length - cursor > choiceCapacity) {
+    const remaining = measuredLines.length - cursor;
     const maximumTake = Math.max(1, remaining - minimumChoiceLines);
     const take = Math.min(normalCapacity, maximumTake);
-    linePages.push(lines.slice(cursor, cursor + take));
+    pages.push(measuredLines.slice(cursor, cursor + take));
     cursor += take;
   }
 
-  linePages.push(lines.slice(cursor));
-
-  return linePages.map(linePage => ({segments: linesToSegments(linePage)}));
+  pages.push(measuredLines.slice(cursor));
+  return pages;
 }
 
-function chunkLines(lines: readonly MeasuredLine[], capacity: number): MeasuredLine[][] {
-  const pages: MeasuredLine[][] = [];
+function chunkLines(lines: readonly string[], capacity: number): string[][] {
+  const pages: string[][] = [];
 
   for (let index = 0; index < lines.length; index += capacity) {
     pages.push(lines.slice(index, index + capacity));
   }
 
   return pages.length > 0 ? pages : [[]];
-}
-
-function linesToSegments(lines: readonly MeasuredLine[]): PageSegment[] {
-  const segments: PageSegment[] = [];
-
-  for (const line of lines) {
-    const previous = segments[segments.length - 1];
-
-    if (previous?.paragraphIndex === line.paragraphIndex) {
-      segments[segments.length - 1] = {
-        paragraphIndex: previous.paragraphIndex,
-        text: `${previous.text} ${line.text}`.trim(),
-      };
-      continue;
-    }
-
-    segments.push({paragraphIndex: line.paragraphIndex, text: line.text});
-  }
-
-  return segments;
 }
 
 function sameLines(left: readonly string[], right: readonly string[]): boolean {
@@ -1099,37 +973,31 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     paddingVertical: PAGE_VERTICAL_PADDING / 2,
   },
-  pageTextArea: {
-    flex: 1,
-    minHeight: 0,
-    overflow: 'hidden',
-  },
-  pageFallbackTextArea: {
-    flex: 1,
-    minHeight: 0,
-    overflow: 'hidden',
-  },
-  measureLayer: {
+  measureText: {
     position: 'absolute',
     left: 0,
     right: 0,
     top: PAGE_VERTICAL_PADDING / 2,
     opacity: 0,
+    fontSize: 18,
+    lineHeight: STORY_LINE_HEIGHT,
+    color: '#171717',
+    textAlign: 'justify',
+    includeFontPadding: false,
   },
-  measureChoices: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: PAGE_VERTICAL_PADDING / 2,
-    opacity: 0,
-    gap: 8,
+  pageTextArea: {
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden',
   },
   choiceDock: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: PAGE_VERTICAL_PADDING / 2,
+    justifyContent: 'flex-end',
   },
+  choiceDockHidden: {opacity: 0},
   pageFooter: {
     flexShrink: 0,
     minHeight: 58,
@@ -1161,7 +1029,7 @@ const styles = StyleSheet.create({
     textAlign: 'justify',
     includeFontPadding: false,
   },
-  choicesZone: {flexShrink: 0, gap: 8},
+  choicesZone: {flexShrink: 0, gap: CHOICE_GAP},
   choice: {
     minHeight: 48,
     justifyContent: 'center',
