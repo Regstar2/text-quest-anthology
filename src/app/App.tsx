@@ -13,11 +13,14 @@ import {UI_STRINGS} from '../config/uiStrings';
 import {
   InkStoryRuntime,
   type InkRuntimeSnapshot,
-  type InkStoryContent,
 } from '../narrative/InkStoryRuntime';
-import syntheticStory from '../stories/generated/synthetic.json';
+import {storyLoader} from '../narrative/StoryLoader';
 
-const COMPILED_STORY = syntheticStory as InkStoryContent;
+const DEFAULT_STORY = storyLoader.listMetadata()[0];
+
+if (!DEFAULT_STORY) {
+  throw new Error('STORY_NOT_FOUND: Generated story manifest is empty.');
+}
 
 export function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
@@ -46,7 +49,7 @@ export function App(): React.JSX.Element {
       <SafeAreaView style={[styles.safeArea, isDarkMode && styles.safeAreaDark]}>
         <View style={styles.content}>
           <Text style={[styles.title, isDarkMode && styles.textDark]}>
-            {UI_STRINGS.prototypeTitle}
+            {DEFAULT_STORY.title}
           </Text>
           <Text style={[styles.status, isDarkMode && styles.textMutedDark]}>
             {UI_STRINGS.prototypeStatus} · v{APP_CONFIG.versionName}
@@ -102,7 +105,8 @@ export function App(): React.JSX.Element {
 function createSession(
   runtimeRef: React.MutableRefObject<InkStoryRuntime | null>,
 ): InkRuntimeSnapshot {
-  const runtime = new InkStoryRuntime(COMPILED_STORY);
+  const storyPackage = storyLoader.load(DEFAULT_STORY.id);
+  const runtime = new InkStoryRuntime(storyPackage.compiledStory);
   runtimeRef.current = runtime;
   return runtime.continueToChoiceOrEnd();
 }

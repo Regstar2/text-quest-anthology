@@ -1,0 +1,8 @@
+{
+  "id": "zavalinka",
+  "schemaVersion": 1,
+  "contentVersion": 1,
+  "title": "Завалинка",
+  "description": "Технический placeholder первой истории для проверки story package pipeline.",
+  "cover": "assets/cover.webp"
+}
