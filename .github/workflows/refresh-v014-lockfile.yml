@@ -1,0 +1,33 @@
+name: Refresh v0.1.4 lockfile
+
+on:
+  push:
+    branches:
+      - feature/v0.1.4-yandex-ads
+
+permissions:
+  contents: write
+
+jobs:
+  lockfile:
+    if: ${{ !contains(github.event.head_commit.message, '[lockfile]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Refresh package lock
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Commit package lock
+        shell: bash
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore: refresh package lock for v0.1.4 [lockfile]"
+          git push
