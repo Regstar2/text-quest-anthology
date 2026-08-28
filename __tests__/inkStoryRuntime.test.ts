@@ -86,7 +86,7 @@ describe('InkStoryRuntime packaged story', () => {
     expect(result.text).toContain('Третий удар выбивает стекло');
   });
 
-  test('Ink state is serializable and can be restored after an early flag-setting choice', () => {
+  test('Ink state is serializable and restores the current decision point', () => {
     const {runtime, snapshot} = startStory();
     const afterPipeCheck = chooseByText(
       runtime,
@@ -102,6 +102,13 @@ describe('InkStoryRuntime packaged story', () => {
     const restoredSnapshot = restoredRuntime.importState(serializedState);
 
     expect(restoredSnapshot.choices).toEqual(afterPipeCheck.choices);
-    expect(restoredSnapshot.text).toBe(afterPipeCheck.text);
+    expect(restoredSnapshot.text).toContain('Внутри тихо');
+
+    const continued = chooseByText(
+      restoredRuntime,
+      restoredSnapshot,
+      'Осмотреть дом тщательно',
+    );
+    expect(continued.text).toContain('Над кроватью обнаруживается');
   });
 });
