@@ -143,14 +143,11 @@ export class YandexAdsProvider implements AdsProvider {
   async showInterstitial(
     placement: InterstitialPlacement,
   ): Promise<AdShowResult> {
-    if (
-      placement !== 'story-ending-restart' ||
-      this.isShowingInterstitial
-    ) {
+    if (placement !== 'story-restart' || this.isShowingInterstitial) {
       return 'unavailable';
     }
 
-    if (!this.interstitialFrequency.registerEnding()) {
+    if (!this.interstitialFrequency.registerRestart()) {
       return 'unavailable';
     }
 
@@ -176,10 +173,6 @@ export class YandexAdsProvider implements AdsProvider {
 
         settled = true;
         this.isShowingInterstitial = false;
-
-        if (result === 'success') {
-          this.interstitialFrequency.markShown();
-        }
 
         this.preloadInterstitial().catch((error: unknown) => {
           logAdsError('Interstitial preload request failed.', error);
