@@ -54,11 +54,22 @@ type ReaderPage = Readonly<{
   segments: readonly PageSegment[];
 }>;
 
+type ReaderMeasurement = Readonly<{
+  key: string;
+  paragraphLines: Readonly<Record<number, readonly string[]>>;
+  choiceHeight: number;
+}>;
+
 if (!DEFAULT_STORY) {
   throw new Error('STORY_NOT_FOUND: Generated story manifest is empty.');
 }
 
 const DEFAULT_STORY_PACKAGE = storyLoader.load(DEFAULT_STORY.id);
+const EMPTY_MEASUREMENT: ReaderMeasurement = {
+  key: '',
+  paragraphLines: {},
+  choiceHeight: 0,
+};
 
 export function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
@@ -76,10 +87,8 @@ export function App(): React.JSX.Element {
   const [isMutating, setIsMutating] = useState(false);
   const [hasStartedSession, setHasStartedSession] = useState(false);
   const [pageHeight, setPageHeight] = useState(0);
-  const [choiceHeight, setChoiceHeight] = useState(0);
-  const [paragraphLines, setParagraphLines] = useState<
-    Readonly<Record<number, readonly string[]>>
-  >({});
+  const [measurement, setMeasurement] =
+    useState<ReaderMeasurement>(EMPTY_MEASUREMENT);
 
   const beginMutation = (): boolean => {
     if (mutationLockRef.current) {
@@ -157,11 +166,6 @@ export function App(): React.JSX.Element {
   );
 
   measurementKeyRef.current = measurementKey;
-
-  useEffect(() => {
-    setParagraphLines({});
-    setChoiceHeight(0);
-  }, [measurementKey]);
 
   useEffect(() => {
     const onAppStateChange = (nextState: AppStateStatus) => {
@@ -297,8 +301,11 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const canRestart =
+    hasStartedSession || screen === 'ending' || snapshot?.isEnded === true;
+
   const requestRestart = () => {
-    if (!hasStartedSession || mutationLockRef.current) {
+    if (!canRestart || mutationLockRef.current) {
       return;
     }
     setMenuView('restart');
@@ -330,10 +337,15 @@ export function App(): React.JSX.Element {
     [snapshot?.text],
   );
 
+  const activeParagraphLines =
+    measurement.key === measurementKey ? measurement.paragraphLines : {};
+  const activeChoiceHeight =
+    measurement.key === measurementKey ? measurement.choiceHeight : 0;
+
   const paragraphsMeasured = currentParagraphs.every(
-    (_paragraph, index) => (paragraphLines[index]?.length ?? 0) > 0,
+    (_paragraph, index) => (activeParagraphLines[index]?.length ?? 0) > 0,
   );
-  const choicesMeasured = !snapshot?.choices.length || choiceHeight > 0;
+  const choicesMeasured = !snapshot?.choices.length || activeChoiceHeight > 0;
   const measurementReady =
     pageHeight > 0 && currentParagraphs.length > 0 && paragraphsMeasured && choicesMeasured;
 
@@ -342,17 +354,17 @@ export function App(): React.JSX.Element {
       measurementReady
         ? paginateParagraphs(
             currentParagraphs,
-            paragraphLines,
+            activeParagraphLines,
             pageHeight,
-            snapshot?.choices.length ? choiceHeight : 0,
+            snapshot?.choices.length ? activeChoiceHeight : 0,
           )
         : [],
     [
-      choiceHeight,
+      activeChoiceHeight,
+      activeParagraphLines,
       currentParagraphs,
       measurementReady,
       pageHeight,
-      paragraphLines,
       snapshot?.choices.length,
     ],
   );
@@ -365,6 +377,55 @@ export function App(): React.JSX.Element {
     measurementReady &&
     Boolean(snapshot?.choices.length) &&
     effectivePageIndex === pages.length - 1;
+
+  const recordParagraphLines = (
+    callbackKey: string,
+    paragraphIndex: number,
+    lines: readonly string[],
+  ) => {
+    if (measurementKeyRef.current !== callbackKey) {
+      return;
+    }
+
+    setMeasurement(previous => {
+      const current: ReaderMeasurement =
+        previous.key === callbackKey
+          ? previous
+          : {key: callbackKey, paragraphLines: {}, choiceHeight: 0};
+      const existing = current.paragraphLines[paragraphIndex] ?? [];
+
+      if (sameLines(existing, lines)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        paragraphLines: {
+          ...current.paragraphLines,
+          [paragraphIndex]: lines,
+        },
+      };
+    });
+  };
+
+  const recordChoiceHeight = (callbackKey: string, height: number) => {
+    if (measurementKeyRef.current !== callbackKey) {
+      return;
+    }
+
+    setMeasurement(previous => {
+      const current: ReaderMeasurement =
+        previous.key === callbackKey
+          ? previous
+          : {key: callbackKey, paragraphLines: {}, choiceHeight: 0};
+
+      if (current.choiceHeight === height) {
+        return current;
+      }
+
+      return {...current, choiceHeight: height};
+    });
+  };
 
   const renderChoices = () => {
     if (!snapshot || snapshot.choices.length === 0) {
@@ -543,7 +604,7 @@ export function App(): React.JSX.Element {
                 </>
               ) : null}
 
-              {hasStartedSession ? (
+              {canRestart ? (
                 <Pressable
                   accessibilityRole="button"
                   onPress={requestRestart}
@@ -652,17 +713,11 @@ export function App(): React.JSX.Element {
                         <Text
                           key={`measure-${callbackKey}-${paragraphIndex}`}
                           onTextLayout={(event: TextLayoutEvent) => {
-                            if (measurementKeyRef.current !== callbackKey) {
-                              return;
-                            }
-                            const lines = event.nativeEvent.lines.map(line => line.text);
-                            setParagraphLines(previous => {
-                              const existing = previous[paragraphIndex] ?? [];
-                              if (sameLines(existing, lines)) {
-                                return previous;
-                              }
-                              return {...previous, [paragraphIndex]: lines};
-                            });
+                            recordParagraphLines(
+                              callbackKey,
+                              paragraphIndex,
+                              event.nativeEvent.lines.map(line => line.text),
+                            );
                           }}
                           style={styles.storyParagraph}>
                           {indentParagraph(paragraph)}
@@ -675,10 +730,10 @@ export function App(): React.JSX.Element {
                     <View
                       key={`measure-choices-${measurementKey}`}
                       onLayout={(event: LayoutChangeEvent) => {
-                        if (measurementKeyRef.current !== measurementKey) {
-                          return;
-                        }
-                        setChoiceHeight(event.nativeEvent.layout.height);
+                        recordChoiceHeight(
+                          measurementKey,
+                          event.nativeEvent.layout.height,
+                        );
                       }}
                       pointerEvents="none"
                       style={styles.measureChoices}>
@@ -695,7 +750,7 @@ export function App(): React.JSX.Element {
                       <View
                         style={[
                           styles.pageTextArea,
-                          isChoicePage && {paddingBottom: choiceHeight + PAGE_GAP},
+                          isChoicePage && {paddingBottom: activeChoiceHeight + PAGE_GAP},
                         ]}>
                         {(pages[effectivePageIndex]?.segments ?? []).map((segment, index) => (
                           <Text
