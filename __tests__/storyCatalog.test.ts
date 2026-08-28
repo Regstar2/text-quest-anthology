@@ -1,6 +1,7 @@
 import {
   loadStoryCatalog,
   resolveStoryCatalogAction,
+  resolveStoryCatalogState,
 } from '../src/app/StoryCatalog';
 import type {StoryMetadata} from '../src/narrative/StoryMetadata';
 import type {
@@ -43,7 +44,7 @@ function save(
 }
 
 describe('story catalog state', () => {
-  test('maps save state to start, continue and ending actions', () => {
+  test('maps save state to start, continue and restart actions', () => {
     expect(resolveStoryCatalogAction(FIRST_STORY, {status: 'not-found'})).toBe(
       'start',
     );
@@ -58,7 +59,26 @@ describe('story catalog state', () => {
         status: 'loaded',
         save: save(FIRST_STORY, true),
       }),
-    ).toBe('ending');
+    ).toBe('restart');
+  });
+
+  test('exposes explicit progress state for the card UI', () => {
+    expect(resolveStoryCatalogState(FIRST_STORY, {status: 'not-found'})).toEqual({
+      action: 'start',
+      progress: 'not-started',
+    });
+    expect(
+      resolveStoryCatalogState(FIRST_STORY, {
+        status: 'loaded',
+        save: save(FIRST_STORY),
+      }),
+    ).toEqual({action: 'continue', progress: 'in-progress'});
+    expect(
+      resolveStoryCatalogState(FIRST_STORY, {
+        status: 'loaded',
+        save: save(FIRST_STORY, true),
+      }),
+    ).toEqual({action: 'restart', progress: 'completed'});
   });
 
   test('does not offer continue for an incompatible content version', () => {
@@ -70,13 +90,14 @@ describe('story catalog state', () => {
     ).toBe('start');
   });
 
-  test('keeps save state independent for different story ids', async () => {
+  test('keeps save and ending state independent for different story ids', async () => {
     const saves = new Map<string, StorySaveLoadResult>([
-      [
-        FIRST_STORY.id,
-        {status: 'loaded', save: save(FIRST_STORY)},
-      ],
+      [FIRST_STORY.id, {status: 'loaded', save: save(FIRST_STORY)}],
       [SECOND_STORY.id, {status: 'not-found'}],
+    ]);
+    const endingCounts = new Map<string, number>([
+      [FIRST_STORY.id, 2],
+      [SECOND_STORY.id, 0],
     ]);
 
     const catalog = await loadStoryCatalog(
@@ -84,11 +105,24 @@ describe('story catalog state', () => {
       {
         load: async storyId => saves.get(storyId) ?? {status: 'not-found'},
       },
+      {
+        count: async storyId => endingCounts.get(storyId) ?? 0,
+      },
     );
 
     expect(catalog.items).toEqual([
-      {metadata: FIRST_STORY, action: 'continue'},
-      {metadata: SECOND_STORY, action: 'start'},
+      {
+        metadata: FIRST_STORY,
+        action: 'continue',
+        progress: 'in-progress',
+        unlockedEndingCount: 2,
+      },
+      {
+        metadata: SECOND_STORY,
+        action: 'start',
+        progress: 'not-started',
+        unlockedEndingCount: 0,
+      },
     ]);
     expect(catalog.storageUnavailable).toBe(false);
   });
@@ -101,9 +135,21 @@ describe('story catalog state', () => {
           throw new Error('storage unavailable');
         },
       },
+      {
+        count: async () => {
+          throw new Error('ending storage unavailable');
+        },
+      },
     );
 
-    expect(catalog.items).toEqual([{metadata: FIRST_STORY, action: 'start'}]);
+    expect(catalog.items).toEqual([
+      {
+        metadata: FIRST_STORY,
+        action: 'start',
+        progress: 'not-started',
+        unlockedEndingCount: 0,
+      },
+    ]);
     expect(catalog.storageUnavailable).toBe(true);
   });
 });
