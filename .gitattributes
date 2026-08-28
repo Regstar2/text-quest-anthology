@@ -1,0 +1,2 @@
+# Keep generated story artifacts deterministic across Windows and Unix.
+src/stories/generated/** text eol=lf
