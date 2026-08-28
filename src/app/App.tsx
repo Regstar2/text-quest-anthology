@@ -30,7 +30,9 @@ const DEFAULT_STORY = storyLoader.listMetadata()[0];
 const AdsBanner = adsProvider.Banner;
 const STORY_LINE_HEIGHT = 28;
 const PAGE_GAP = 12;
-const PAGE_VERTICAL_PADDING = 16;
+const PAGE_VERTICAL_PADDING = 12;
+const PAGINATION_SAFETY_LINES = 2;
+const MIN_CHOICE_PAGE_LINES = 3;
 const PARAGRAPH_INDENT = '\u2003\u2003';
 
 type AppScreen = 'start' | 'reader' | 'ending';
@@ -63,6 +65,8 @@ export function App(): React.JSX.Element {
   const sessionRef = useRef<StorySession | null>(null);
   const mutationLockRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
+  const measurementKeyRef = useRef('');
+
   const [screen, setScreen] = useState<AppScreen>('start');
   const [readerMode, setReaderMode] = useState<ReaderMode>('pages');
   const [menuView, setMenuView] = useState<MenuView>(null);
@@ -98,6 +102,7 @@ export function App(): React.JSX.Element {
 
     setMenuView(null);
     setScreen('start');
+
     const session = sessionRef.current;
     if (!session || !hasStartedSessionRef.current) {
       return;
@@ -143,10 +148,20 @@ export function App(): React.JSX.Element {
     };
   }, []);
 
+  const measurementKey = useMemo(
+    () =>
+      `${snapshot?.text ?? ''}\u0001${
+        snapshot?.choices.map(choice => `${choice.index}:${choice.text}`).join('\u0002') ?? ''
+      }`,
+    [snapshot?.choices, snapshot?.text],
+  );
+
+  measurementKeyRef.current = measurementKey;
+
   useEffect(() => {
     setParagraphLines({});
     setChoiceHeight(0);
-  }, [snapshot?.text]);
+  }, [measurementKey]);
 
   useEffect(() => {
     const onAppStateChange = (nextState: AppStateStatus) => {
@@ -157,10 +172,12 @@ export function App(): React.JSX.Element {
       if (nextState !== 'inactive' && nextState !== 'background') {
         return;
       }
+
       const session = sessionRef.current;
       if (!session || !hasStartedSessionRef.current) {
         return;
       }
+
       session.flush().then(persisted => {
         if (!persisted) {
           setNotice(UI_STRINGS.saveFailed);
@@ -190,6 +207,7 @@ export function App(): React.JSX.Element {
         return true;
       },
     );
+
     return () => subscription.remove();
   }, [exitStory, menuView, screen]);
 
@@ -265,6 +283,7 @@ export function App(): React.JSX.Element {
           // Advertising is optional and must never block narrative reset.
         }
       }
+
       const result = await session.restart();
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
@@ -279,7 +298,7 @@ export function App(): React.JSX.Element {
   };
 
   const requestRestart = () => {
-    if (mutationLockRef.current) {
+    if (!hasStartedSession || mutationLockRef.current) {
       return;
     }
     setMenuView('restart');
@@ -298,6 +317,7 @@ export function App(): React.JSX.Element {
 
   const isBusy = isLoading || isMutating;
   let startActionLabel: string = UI_STRINGS.startStory;
+
   if (hasStartedSession) {
     startActionLabel = UI_STRINGS.continueStory;
   }
@@ -310,30 +330,41 @@ export function App(): React.JSX.Element {
     [snapshot?.text],
   );
 
+  const paragraphsMeasured = currentParagraphs.every(
+    (_paragraph, index) => (paragraphLines[index]?.length ?? 0) > 0,
+  );
+  const choicesMeasured = !snapshot?.choices.length || choiceHeight > 0;
+  const measurementReady =
+    pageHeight > 0 && currentParagraphs.length > 0 && paragraphsMeasured && choicesMeasured;
+
   const pages = useMemo(
     () =>
-      paginateParagraphs(
-        currentParagraphs,
-        paragraphLines,
-        snapshot?.text ?? '',
-        pageHeight,
-        snapshot?.choices.length ? choiceHeight : 0,
-      ),
+      measurementReady
+        ? paginateParagraphs(
+            currentParagraphs,
+            paragraphLines,
+            pageHeight,
+            snapshot?.choices.length ? choiceHeight : 0,
+          )
+        : [],
     [
       choiceHeight,
       currentParagraphs,
+      measurementReady,
       pageHeight,
       paragraphLines,
       snapshot?.choices.length,
-      snapshot?.text,
     ],
   );
 
-  const effectivePageIndex = snapshot
-    ? Math.min(snapshot.pageIndex, Math.max(pages.length - 1, 0))
-    : 0;
+  const effectivePageIndex =
+    snapshot && pages.length > 0
+      ? Math.min(snapshot.pageIndex, pages.length - 1)
+      : 0;
   const isChoicePage =
-    Boolean(snapshot?.choices.length) && effectivePageIndex === pages.length - 1;
+    measurementReady &&
+    Boolean(snapshot?.choices.length) &&
+    effectivePageIndex === pages.length - 1;
 
   const renderChoices = () => {
     if (!snapshot || snapshot.choices.length === 0) {
@@ -346,7 +377,7 @@ export function App(): React.JSX.Element {
           <Pressable
             accessibilityLabel={choice.text}
             accessibilityRole="button"
-            disabled={isBusy}
+            disabled={isBusy || !measurementReady}
             key={choice.index}
             onPress={() => {
               choose(choice.index);
@@ -355,7 +386,7 @@ export function App(): React.JSX.Element {
               styles.choice,
               isDarkMode && styles.choiceDark,
               pressed && styles.buttonPressed,
-              isBusy && styles.disabled,
+              (isBusy || !measurementReady) && styles.disabled,
             ]}>
             <Text style={[styles.choiceText, isDarkMode && styles.textDark]}>
               {choice.text}
@@ -366,24 +397,28 @@ export function App(): React.JSX.Element {
     );
   };
 
+  const renderMenuButton = () => (
+    <Pressable
+      accessibilityLabel={UI_STRINGS.menu}
+      accessibilityRole="button"
+      disabled={isBusy}
+      hitSlop={8}
+      onPress={() => setMenuView('menu')}
+      style={({pressed}) => [
+        styles.menuButton,
+        pressed && styles.buttonPressed,
+        isBusy && styles.disabled,
+      ]}>
+      <Text style={[styles.menuButtonText, isDarkMode && styles.textDark]}>⋮</Text>
+    </Pressable>
+  );
+
   const renderHeader = () => (
     <View style={[styles.readerHeader, isDarkMode && styles.headerDark]}>
       <Text style={[styles.readerTitle, isDarkMode && styles.textDark]}>
         {DEFAULT_STORY.title}
       </Text>
-      <Pressable
-        accessibilityLabel={UI_STRINGS.menu}
-        accessibilityRole="button"
-        disabled={isBusy}
-        hitSlop={8}
-        onPress={() => setMenuView('menu')}
-        style={({pressed}) => [
-          styles.menuButton,
-          pressed && styles.buttonPressed,
-          isBusy && styles.disabled,
-        ]}>
-        <Text style={[styles.menuButtonText, isDarkMode && styles.textDark]}>⋮</Text>
-      </Pressable>
+      {renderMenuButton()}
     </View>
   );
 
@@ -425,6 +460,7 @@ export function App(): React.JSX.Element {
                     {UI_STRINGS.cancel}
                   </Text>
                 </Pressable>
+
                 <Pressable
                   accessibilityRole="button"
                   disabled={isBusy}
@@ -460,6 +496,7 @@ export function App(): React.JSX.Element {
                       mode === 'pages'
                         ? UI_STRINGS.readerModePages
                         : UI_STRINGS.readerModeFeed;
+
                     return (
                       <Pressable
                         accessibilityLabel={label}
@@ -488,31 +525,36 @@ export function App(): React.JSX.Element {
                 </View>
               </View>
 
-              <View style={styles.menuDivider} />
+              {screen !== 'start' ? (
+                <>
+                  <View style={styles.menuDivider} />
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={exitStory}
+                    style={({pressed}) => [
+                      styles.menuRow,
+                      pressed && styles.menuRowPressed,
+                    ]}>
+                    <Text style={[styles.menuRowIcon, isDarkMode && styles.textDark]}>⌂</Text>
+                    <Text style={[styles.menuRowText, isDarkMode && styles.textDark]}>
+                      {UI_STRINGS.returnToStart}
+                    </Text>
+                  </Pressable>
+                </>
+              ) : null}
 
-              <Pressable
-                accessibilityRole="button"
-                onPress={exitStory}
-                style={({pressed}) => [
-                  styles.menuRow,
-                  pressed && styles.menuRowPressed,
-                ]}>
-                <Text style={[styles.menuRowIcon, isDarkMode && styles.textDark]}>⌂</Text>
-                <Text style={[styles.menuRowText, isDarkMode && styles.textDark]}>
-                  {UI_STRINGS.returnToStart}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                accessibilityRole="button"
-                onPress={requestRestart}
-                style={({pressed}) => [
-                  styles.menuRow,
-                  pressed && styles.menuRowPressed,
-                ]}>
-                <Text style={styles.menuDangerIcon}>↻</Text>
-                <Text style={styles.menuDangerText}>{UI_STRINGS.restart}</Text>
-              </Pressable>
+              {hasStartedSession ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={requestRestart}
+                  style={({pressed}) => [
+                    styles.menuRow,
+                    pressed && styles.menuRowPressed,
+                  ]}>
+                  <Text style={styles.menuDangerIcon}>↻</Text>
+                  <Text style={styles.menuDangerText}>{UI_STRINGS.restart}</Text>
+                </Pressable>
+              ) : null}
 
               <Pressable
                 accessibilityRole="button"
@@ -540,48 +582,51 @@ export function App(): React.JSX.Element {
         <AdsBanner isDarkMode={isDarkMode} />
 
         {screen === 'start' ? (
-          <View style={[styles.screen, styles.startContent]}>
-            <Text style={[styles.title, isDarkMode && styles.textDark]}>
-              {DEFAULT_STORY.title}
-            </Text>
-            <Text style={[styles.status, isDarkMode && styles.textMutedDark]}>
-              {UI_STRINGS.prototypeStatus} · v{APP_CONFIG.versionName}
-            </Text>
-            <Text style={[styles.description, isDarkMode && styles.textMutedDark]}>
-              {DEFAULT_STORY.description}
-            </Text>
-
-            {notice ? (
-              <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>{notice}</Text>
-            ) : null}
-            {isLoading ? (
-              <Text style={[styles.loading, isDarkMode && styles.textDark]}>
-                {UI_STRINGS.loadingStory}
+          <View style={styles.screen}>
+            <View style={styles.startHeader}>{renderMenuButton()}</View>
+            <View style={styles.startContent}>
+              <Text style={[styles.title, isDarkMode && styles.textDark]}>
+                {DEFAULT_STORY.title}
               </Text>
-            ) : null}
-            {snapshot ? (
-              <View style={styles.startActions}>
-                <Pressable
-                  accessibilityLabel={startActionLabel}
-                  accessibilityRole="button"
-                  disabled={isBusy}
-                  onPress={enterStory}
-                  style={({pressed}) => [
-                    styles.primaryButton,
-                    isDarkMode && styles.primaryButtonDark,
-                    pressed && styles.buttonPressed,
-                    isBusy && styles.disabled,
-                  ]}>
-                  <Text
-                    style={[
-                      styles.primaryButtonText,
-                      isDarkMode && styles.primaryButtonTextDark,
+              <Text style={[styles.status, isDarkMode && styles.textMutedDark]}>
+                {UI_STRINGS.prototypeStatus} · v{APP_CONFIG.versionName}
+              </Text>
+              <Text style={[styles.description, isDarkMode && styles.textMutedDark]}>
+                {DEFAULT_STORY.description}
+              </Text>
+
+              {notice ? (
+                <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>{notice}</Text>
+              ) : null}
+              {isLoading ? (
+                <Text style={[styles.loading, isDarkMode && styles.textDark]}>
+                  {UI_STRINGS.loadingStory}
+                </Text>
+              ) : null}
+              {snapshot ? (
+                <View style={styles.startActions}>
+                  <Pressable
+                    accessibilityLabel={startActionLabel}
+                    accessibilityRole="button"
+                    disabled={isBusy}
+                    onPress={enterStory}
+                    style={({pressed}) => [
+                      styles.primaryButton,
+                      isDarkMode && styles.primaryButtonDark,
+                      pressed && styles.buttonPressed,
+                      isBusy && styles.disabled,
                     ]}>
-                    {startActionLabel}
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
+                    <Text
+                      style={[
+                        styles.primaryButtonText,
+                        isDarkMode && styles.primaryButtonTextDark,
+                      ]}>
+                      {startActionLabel}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
           </View>
         ) : null}
 
@@ -600,28 +645,39 @@ export function App(): React.JSX.Element {
                   }}
                   style={styles.pageBody}>
                   <View pointerEvents="none" style={styles.measureLayer}>
-                    {currentParagraphs.map((paragraph, paragraphIndex) => (
-                      <Text
-                        key={`measure-${paragraphIndex}`}
-                        onTextLayout={(event: TextLayoutEvent) => {
-                          const lines = event.nativeEvent.lines.map(line => line.text);
-                          setParagraphLines(previous => {
-                            const existing = previous[paragraphIndex] ?? [];
-                            if (sameLines(existing, lines)) {
-                              return previous;
+                    {currentParagraphs.map((paragraph, paragraphIndex) => {
+                      const callbackKey = measurementKey;
+
+                      return (
+                        <Text
+                          key={`measure-${callbackKey}-${paragraphIndex}`}
+                          onTextLayout={(event: TextLayoutEvent) => {
+                            if (measurementKeyRef.current !== callbackKey) {
+                              return;
                             }
-                            return {...previous, [paragraphIndex]: lines};
-                          });
-                        }}
-                        style={styles.storyParagraph}>
-                        {indentParagraph(paragraph)}
-                      </Text>
-                    ))}
+                            const lines = event.nativeEvent.lines.map(line => line.text);
+                            setParagraphLines(previous => {
+                              const existing = previous[paragraphIndex] ?? [];
+                              if (sameLines(existing, lines)) {
+                                return previous;
+                              }
+                              return {...previous, [paragraphIndex]: lines};
+                            });
+                          }}
+                          style={styles.storyParagraph}>
+                          {indentParagraph(paragraph)}
+                        </Text>
+                      );
+                    })}
                   </View>
 
                   {snapshot.choices.length > 0 ? (
                     <View
+                      key={`measure-choices-${measurementKey}`}
                       onLayout={(event: LayoutChangeEvent) => {
+                        if (measurementKeyRef.current !== measurementKey) {
+                          return;
+                        }
                         setChoiceHeight(event.nativeEvent.layout.height);
                       }}
                       pointerEvents="none"
@@ -634,24 +690,40 @@ export function App(): React.JSX.Element {
                     </View>
                   ) : null}
 
-                  <View style={styles.pageTextArea}>
-                    {(pages[effectivePageIndex]?.segments ?? []).map((segment, index) => (
-                      <Text
-                        key={`${segment.paragraphIndex}-${index}`}
-                        style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
-                        {segment.text}
-                      </Text>
-                    ))}
-                  </View>
+                  {measurementReady ? (
+                    <>
+                      <View
+                        style={[
+                          styles.pageTextArea,
+                          isChoicePage && {paddingBottom: choiceHeight + PAGE_GAP},
+                        ]}>
+                        {(pages[effectivePageIndex]?.segments ?? []).map((segment, index) => (
+                          <Text
+                            key={`${segment.paragraphIndex}-${index}-${segment.text.slice(0, 18)}`}
+                            style={[styles.storyParagraph, isDarkMode && styles.textDark]}>
+                            {segment.text}
+                          </Text>
+                        ))}
+                      </View>
 
-                  {isChoicePage ? renderChoices() : null}
+                      {isChoicePage ? (
+                        <View style={styles.choiceDock}>{renderChoices()}</View>
+                      ) : null}
+                    </>
+                  ) : (
+                    <View style={styles.pagePreparing}>
+                      <Text style={[styles.pagePreparingText, isDarkMode && styles.textMutedDark]}>
+                        …
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
                 <View style={styles.pageFooter}>
                   <Pressable
                     accessibilityLabel={UI_STRINGS.previousPage}
                     accessibilityRole="button"
-                    disabled={isBusy || effectivePageIndex === 0}
+                    disabled={isBusy || !measurementReady || effectivePageIndex === 0}
                     onPress={() => {
                       moveToPage(effectivePageIndex - 1);
                     }}
@@ -659,7 +731,8 @@ export function App(): React.JSX.Element {
                       styles.pageNavButton,
                       isDarkMode && styles.pageNavButtonDark,
                       pressed && styles.buttonPressed,
-                      (isBusy || effectivePageIndex === 0) && styles.disabled,
+                      (isBusy || !measurementReady || effectivePageIndex === 0) &&
+                        styles.disabled,
                     ]}>
                     <Text style={[styles.pageNavText, isDarkMode && styles.textDark]}>
                       ← {UI_STRINGS.previousPage}
@@ -667,13 +740,17 @@ export function App(): React.JSX.Element {
                   </Pressable>
 
                   <Text style={[styles.pageCounter, isDarkMode && styles.textMutedDark]}>
-                    {effectivePageIndex + 1}/{pages.length}
+                    {measurementReady ? `${effectivePageIndex + 1}/${pages.length}` : '…'}
                   </Text>
 
                   <Pressable
                     accessibilityLabel={UI_STRINGS.nextPage}
                     accessibilityRole="button"
-                    disabled={isBusy || effectivePageIndex >= pages.length - 1}
+                    disabled={
+                      isBusy ||
+                      !measurementReady ||
+                      effectivePageIndex >= pages.length - 1
+                    }
                     onPress={() => {
                       moveToPage(effectivePageIndex + 1);
                     }}
@@ -681,7 +758,10 @@ export function App(): React.JSX.Element {
                       styles.pageNavButton,
                       isDarkMode && styles.pageNavButtonDark,
                       pressed && styles.buttonPressed,
-                      (isBusy || effectivePageIndex >= pages.length - 1) && styles.disabled,
+                      (isBusy ||
+                        !measurementReady ||
+                        effectivePageIndex >= pages.length - 1) &&
+                        styles.disabled,
                     ]}>
                     <Text style={[styles.pageNavText, isDarkMode && styles.textDark]}>
                       {UI_STRINGS.nextPage} →
@@ -752,30 +832,11 @@ function indentParagraph(paragraph: string): string {
 function paginateParagraphs(
   paragraphs: readonly string[],
   measuredParagraphLines: Readonly<Record<number, readonly string[]>>,
-  fallbackText: string,
   pageHeight: number,
   choiceHeight: number,
 ): ReaderPage[] {
-  if (paragraphs.length === 0) {
-    return [{segments: [{paragraphIndex: 0, text: fallbackText}]}];
-  }
-
-  const fullyMeasured = paragraphs.every(
-    (_paragraph, index) => (measuredParagraphLines[index]?.length ?? 0) > 0,
-  );
-
-  if (!fullyMeasured || pageHeight <= 0) {
-    return [
-      {
-        segments: paragraphs.map((paragraph, paragraphIndex) => ({
-          paragraphIndex,
-          text: indentParagraph(paragraph),
-        })),
-      },
-    ];
-  }
-
   const lines: MeasuredLine[] = [];
+
   paragraphs.forEach((_paragraph, paragraphIndex) => {
     const measuredLines = measuredParagraphLines[paragraphIndex] ?? [];
     measuredLines.forEach((text, lineIndex) => {
@@ -784,11 +845,15 @@ function paginateParagraphs(
   });
 
   if (lines.length === 0) {
-    return [{segments: [{paragraphIndex: 0, text: fallbackText}]}];
+    return [];
   }
 
   const contentHeight = Math.max(STORY_LINE_HEIGHT, pageHeight - PAGE_VERTICAL_PADDING);
-  const normalCapacity = Math.max(1, Math.floor(contentHeight / STORY_LINE_HEIGHT));
+  const measuredNormalCapacity = Math.max(1, Math.floor(contentHeight / STORY_LINE_HEIGHT));
+  const normalCapacity = Math.max(
+    1,
+    measuredNormalCapacity - PAGINATION_SAFETY_LINES,
+  );
 
   if (choiceHeight <= 0) {
     return chunkLines(lines, normalCapacity).map(linePage => ({
@@ -796,29 +861,43 @@ function paginateParagraphs(
     }));
   }
 
-  const choiceCapacity = Math.max(
+  const measuredChoiceCapacity = Math.max(
     1,
     Math.floor((contentHeight - choiceHeight - PAGE_GAP) / STORY_LINE_HEIGHT),
   );
+  const choiceCapacity = Math.max(
+    1,
+    measuredChoiceCapacity - PAGINATION_SAFETY_LINES,
+  );
+  const minimumChoiceLines = Math.min(
+    lines.length,
+    choiceCapacity,
+    MIN_CHOICE_PAGE_LINES,
+  );
+
   const linePages: MeasuredLine[][] = [];
   let cursor = 0;
 
   while (lines.length - cursor > choiceCapacity) {
     const remaining = lines.length - cursor;
-    const take = Math.min(normalCapacity, Math.max(1, remaining - 1));
+    const maximumTake = Math.max(1, remaining - minimumChoiceLines);
+    const take = Math.min(normalCapacity, maximumTake);
     linePages.push(lines.slice(cursor, cursor + take));
     cursor += take;
   }
 
   linePages.push(lines.slice(cursor));
+
   return linePages.map(linePage => ({segments: linesToSegments(linePage)}));
 }
 
 function chunkLines(lines: readonly MeasuredLine[], capacity: number): MeasuredLine[][] {
   const pages: MeasuredLine[][] = [];
+
   for (let index = 0; index < lines.length; index += capacity) {
     pages.push(lines.slice(index, index + capacity));
   }
+
   return pages.length > 0 ? pages : [[]];
 }
 
@@ -827,6 +906,7 @@ function linesToSegments(lines: readonly MeasuredLine[]): PageSegment[] {
 
   for (const line of lines) {
     const previous = segments[segments.length - 1];
+
     if (previous?.paragraphIndex === line.paragraphIndex) {
       segments[segments.length - 1] = {
         paragraphIndex: previous.paragraphIndex,
@@ -862,7 +942,19 @@ const styles = StyleSheet.create({
   safeArea: {flex: 1, backgroundColor: '#ffffff'},
   safeAreaDark: {backgroundColor: '#111111'},
   screen: {flex: 1},
-  startContent: {justifyContent: 'center', padding: 24, gap: 14},
+  startHeader: {
+    minHeight: 48,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingRight: 8,
+  },
+  startContent: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 48,
+    gap: 14,
+  },
   title: {fontSize: 30, lineHeight: 36, fontWeight: '700', color: '#111111'},
   status: {fontSize: 13, lineHeight: 18, color: '#666666'},
   description: {fontSize: 16, lineHeight: 23, color: '#555555'},
@@ -925,14 +1017,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  pageReaderContent: {flex: 1, paddingHorizontal: 20, paddingTop: 10},
+  pageReaderContent: {
+    flex: 1,
+    minHeight: 0,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
   pageBody: {
     flex: 1,
+    minHeight: 0,
+    position: 'relative',
     overflow: 'hidden',
     paddingVertical: PAGE_VERTICAL_PADDING / 2,
-    gap: PAGE_GAP,
   },
-  pageTextArea: {flexShrink: 1},
+  pageTextArea: {
+    flex: 1,
+    minHeight: 0,
+    overflow: 'hidden',
+  },
   measureLayer: {
     position: 'absolute',
     left: 0,
@@ -948,13 +1051,25 @@ const styles = StyleSheet.create({
     opacity: 0,
     gap: 8,
   },
+  choiceDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: PAGE_VERTICAL_PADDING / 2,
+  },
+  pagePreparing: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pagePreparingText: {fontSize: 28, lineHeight: 32, color: '#777777'},
   pageFooter: {
+    flexShrink: 0,
     minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    paddingBottom: 6,
   },
   pageNavButton: {
     minHeight: 44,
@@ -979,15 +1094,15 @@ const styles = StyleSheet.create({
     textAlign: 'justify',
     includeFontPadding: false,
   },
-  choicesZone: {gap: 8},
+  choicesZone: {flexShrink: 0, gap: 8},
   choice: {
-    minHeight: 50,
+    minHeight: 48,
     justifyContent: 'center',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#d0d0d0',
     paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingVertical: 8,
     backgroundColor: '#ffffff',
   },
   choiceDark: {borderColor: '#444444', backgroundColor: '#171717'},
