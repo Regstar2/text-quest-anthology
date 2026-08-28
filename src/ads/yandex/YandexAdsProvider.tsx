@@ -16,13 +16,16 @@ import type {
 import {InterstitialFrequencyPolicy} from '../InterstitialFrequencyPolicy';
 import {ADS_CONFIG} from '../../config/adsConfig';
 
+type BannerLoadState = 'loading' | 'loaded' | 'failed';
+
 function logAdsError(message: string, error: unknown): void {
   console.warn(`[ads:yandex] ${message}`, error);
 }
 
-function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element {
+function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element | null {
   const {height, width} = useWindowDimensions();
   const [adSize, setAdSize] = useState<BannerAdSize | null>(null);
+  const [loadState, setLoadState] = useState<BannerLoadState>('loading');
   const bannerWidth = Math.max(1, Math.floor(width));
   const reservedHeight = Math.max(
     ADS_CONFIG.bannerLayout.minHeight,
@@ -32,8 +35,9 @@ function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element {
   useEffect(() => {
     let active = true;
     setAdSize(null);
+    setLoadState('loading');
 
-    void BannerAdSize.stickySize(bannerWidth)
+    BannerAdSize.stickySize(bannerWidth)
       .then(size => {
         if (active) {
           setAdSize(size);
@@ -41,6 +45,7 @@ function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element {
       })
       .catch((error: unknown) => {
         if (active) {
+          setLoadState('failed');
           logAdsError('Failed to calculate sticky banner size.', error);
         }
       });
@@ -50,19 +55,28 @@ function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element {
     };
   }, [bannerWidth]);
 
+  if (loadState === 'failed') {
+    return null;
+  }
+
   return (
     <View
       accessibilityLabel="Реклама"
       style={[
         styles.bannerSlot,
         {minHeight: reservedHeight},
-        isDarkMode && styles.bannerSlotDark,
+        loadState === 'loaded' && styles.bannerSlotLoaded,
+        loadState === 'loaded' && isDarkMode && styles.bannerSlotLoadedDark,
       ]}>
       {adSize ? (
         <BannerView
           adRequest={{adUnitId: ADS_CONFIG.adUnits.banner}}
-          onAdFailedToLoad={() => {
-            logAdsError('Banner failed to load.', 'load-failed');
+          onAdFailedToLoad={error => {
+            setLoadState('failed');
+            logAdsError('Banner failed to load.', error);
+          }}
+          onAdLoaded={() => {
+            setLoadState('loaded');
           }}
           size={adSize}
         />
@@ -144,7 +158,9 @@ export class YandexAdsProvider implements AdsProvider {
     this.interstitialAd = null;
 
     if (!ad) {
-      void this.preloadInterstitial();
+      this.preloadInterstitial().catch((error: unknown) => {
+        logAdsError('Interstitial preload request failed.', error);
+      });
       return 'unavailable';
     }
 
@@ -165,7 +181,9 @@ export class YandexAdsProvider implements AdsProvider {
           this.interstitialFrequency.markShown();
         }
 
-        void this.preloadInterstitial();
+        this.preloadInterstitial().catch((error: unknown) => {
+          logAdsError('Interstitial preload request failed.', error);
+        });
         resolve(result);
       };
 
@@ -205,11 +223,14 @@ export const yandexAdsProvider = new YandexAdsProvider();
 const styles = StyleSheet.create({
   bannerSlot: {
     alignItems: 'center',
-    backgroundColor: '#f3f4f6',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     width: '100%',
   },
-  bannerSlotDark: {
+  bannerSlotLoaded: {
+    backgroundColor: '#f3f4f6',
+  },
+  bannerSlotLoadedDark: {
     backgroundColor: '#1f2937',
   },
 });
