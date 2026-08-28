@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import {adsProvider} from '../ads';
+import {ADS_CONFIG} from '../config/adsConfig';
 import {APP_CONFIG} from '../config/appConfig';
 import {UI_STRINGS} from '../config/uiStrings';
 import {
@@ -62,6 +63,7 @@ export function App(): React.JSX.Element {
   const mutationLockRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
   const measurementKeyRef = useRef('');
+  const feedChoiceCountRef = useRef(0);
 
   const storyMetadata = useMemo(() => storyLoader.listMetadata(), []);
 
@@ -77,8 +79,14 @@ export function App(): React.JSX.Element {
   const [hasStartedSession, setHasStartedSession] = useState(false);
   const [pageHeight, setPageHeight] = useState(0);
   const [readerRevision, setReaderRevision] = useState(0);
+  const [feedBannerVisible, setFeedBannerVisible] = useState(false);
   const [measurement, setMeasurement] =
     useState<ReaderMeasurement>(EMPTY_MEASUREMENT);
+
+  const resetReaderAdCadence = (): void => {
+    feedChoiceCountRef.current = 0;
+    setFeedBannerVisible(false);
+  };
 
   const beginMutation = (): boolean => {
     if (mutationLockRef.current) {
@@ -143,6 +151,8 @@ export function App(): React.JSX.Element {
 
     sessionRef.current = null;
     hasStartedSessionRef.current = false;
+    feedChoiceCountRef.current = 0;
+    setFeedBannerVisible(false);
     setHasStartedSession(false);
     setActiveStory(null);
     setSnapshot(null);
@@ -238,6 +248,7 @@ export function App(): React.JSX.Element {
 
       sessionRef.current = opened.session;
       hasStartedSessionRef.current = opened.resumed;
+      resetReaderAdCadence();
       setHasStartedSession(opened.resumed);
       setActiveStory(storyPackage.metadata);
       setSnapshot(opened.snapshot);
@@ -258,6 +269,7 @@ export function App(): React.JSX.Element {
     } catch {
       sessionRef.current = null;
       hasStartedSessionRef.current = false;
+      resetReaderAdCadence();
       setHasStartedSession(false);
       setActiveStory(null);
       setSnapshot(null);
@@ -299,6 +311,15 @@ export function App(): React.JSX.Element {
       setReaderRevision(previous => previous + 1);
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
+
+      if (readerMode === 'feed') {
+        const nextChoiceCount = feedChoiceCountRef.current + 1;
+        feedChoiceCountRef.current = nextChoiceCount;
+        setFeedBannerVisible(
+          nextChoiceCount % ADS_CONFIG.bannerFrequency.feedChoicesPerBanner === 0,
+        );
+      }
+
       setScreen(result.snapshot.isEnded ? 'ending' : 'reader');
     } catch {
       setNotice(UI_STRINGS.storyActionFailed);
@@ -307,28 +328,27 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const restart = async (showEndingAd: boolean) => {
+  const restart = async () => {
     const session = sessionRef.current;
     if (!session || !beginMutation()) {
       return;
     }
 
     try {
-      if (showEndingAd) {
-        try {
-          await adsProvider.showInterstitial('story-ending-restart');
-        } catch {
-          // Advertising is optional and must never block narrative reset.
-        }
-      }
-
       const result = await session.restart();
       hasStartedSessionRef.current = true;
+      resetReaderAdCadence();
       setHasStartedSession(true);
       setReaderRevision(previous => previous + 1);
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
       setScreen('reader');
+
+      try {
+        await adsProvider.showInterstitial('story-restart');
+      } catch {
+        // Advertising is optional and must never block narrative reset.
+      }
     } catch {
       setNotice(UI_STRINGS.storyActionFailed);
     } finally {
@@ -348,9 +368,8 @@ export function App(): React.JSX.Element {
   };
 
   const confirmRestart = () => {
-    const showEndingAd = screen === 'ending' && snapshot?.isEnded === true;
     setMenuView(null);
-    void restart(showEndingAd);
+    void restart();
   };
 
   const changeReaderMode = (mode: ReaderMode) => {
@@ -404,6 +423,12 @@ export function App(): React.JSX.Element {
         : currentParagraphs.map(indentParagraph),
     [currentParagraphs, effectivePageIndex, measurementReady, pages],
   );
+  const showReaderBanner =
+    screen === 'reader' &&
+    (readerMode === 'pages'
+      ? measurementReady &&
+        (effectivePageIndex + 1) % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0
+      : feedBannerVisible);
 
   const recordMeasuredLines = (
     callbackKey: string,
@@ -635,7 +660,7 @@ export function App(): React.JSX.Element {
     <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <SafeAreaView style={[styles.safeArea, isDarkMode && styles.safeAreaDark]}>
-        <AdsBanner isDarkMode={isDarkMode} />
+        {showReaderBanner ? <AdsBanner isDarkMode={isDarkMode} /> : null}
 
         {screen === 'main' ? (
           <View style={styles.screen}>
@@ -899,7 +924,7 @@ export function App(): React.JSX.Element {
                   accessibilityRole="button"
                   disabled={isBusy}
                   onPress={() => {
-                    void restart(true);
+                    void restart();
                   }}
                   style={({pressed}) => [
                     styles.endingPrimaryAction,
