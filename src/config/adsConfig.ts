@@ -5,6 +5,14 @@ export interface AdsConfig {
     banner: string;
     interstitial: string;
   };
+  bannerLayout: {
+    heightRatio: number;
+    minHeight: number;
+  };
+  interstitialFrequency: {
+    endingsPerAd: number;
+    cooldownMs: number;
+  };
 }
 
 export const ADS_CONFIG: AdsConfig = {
@@ -13,5 +21,13 @@ export const ADS_CONFIG: AdsConfig = {
   adUnits: {
     banner: 'demo-banner-yandex',
     interstitial: 'demo-interstitial-yandex',
+  },
+  bannerLayout: {
+    heightRatio: 0.08,
+    minHeight: 50,
+  },
+  interstitialFrequency: {
+    endingsPerAd: 3,
+    cooldownMs: 10 * 60 * 1000,
   },
 };
