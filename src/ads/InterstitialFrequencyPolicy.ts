@@ -1,33 +1,20 @@
 export interface InterstitialFrequencyPolicyConfig {
-  endingsPerAd: number;
-  cooldownMs: number;
+  restartsPerAd: number;
 }
 
 export class InterstitialFrequencyPolicy {
-  private endingsSinceLastAd = 0;
-  private lastShownAt: number | null = null;
+  private restartsSinceLastAttempt = 0;
 
   constructor(private readonly config: InterstitialFrequencyPolicyConfig) {}
 
-  registerEnding(now = Date.now()): boolean {
-    this.endingsSinceLastAd += 1;
+  registerRestart(): boolean {
+    this.restartsSinceLastAttempt += 1;
 
-    if (this.endingsSinceLastAd < this.config.endingsPerAd) {
+    if (this.restartsSinceLastAttempt < this.config.restartsPerAd) {
       return false;
     }
 
-    if (
-      this.lastShownAt !== null &&
-      now - this.lastShownAt < this.config.cooldownMs
-    ) {
-      return false;
-    }
-
+    this.restartsSinceLastAttempt = 0;
     return true;
-  }
-
-  markShown(now = Date.now()): void {
-    this.endingsSinceLastAd = 0;
-    this.lastShownAt = now;
   }
 }
