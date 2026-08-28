@@ -13,6 +13,7 @@ export type StorySave = Readonly<{
   completed: boolean;
   endingId: string | null;
   readerPassages?: readonly string[];
+  readerPageIndex?: number;
 }>;
 
 export type StorySaveCorruptionReason =
@@ -98,7 +99,8 @@ function isStorySave(value: unknown): value is StorySave {
       value.endingId === null ||
       (typeof value.endingId === 'string' && value.endingId.length > 0)
     ) ||
-    !isReaderPassages(value.readerPassages)
+    !isReaderPassages(value.readerPassages) ||
+    !isReaderPageIndex(value.readerPageIndex)
   ) {
     return false;
   }
@@ -117,6 +119,13 @@ function isReaderPassages(value: unknown): value is readonly string[] | undefine
       value.every(
         passage => typeof passage === 'string' && passage.trim().length > 0,
       ))
+  );
+}
+
+function isReaderPageIndex(value: unknown): value is number | undefined {
+  return (
+    value === undefined ||
+    (typeof value === 'number' && Number.isInteger(value) && value >= 0)
   );
 }
 

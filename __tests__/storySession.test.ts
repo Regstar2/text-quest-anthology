@@ -1,4 +1,4 @@
-import {StorySession} from '../src/narrative/StorySession';
+import {StorySession, type StoryReaderSnapshot} from '../src/narrative/StorySession';
 import {storyLoader} from '../src/narrative/StoryLoader';
 import {
   StorySaveRepository,
@@ -29,74 +29,125 @@ class MemoryStorySaveStorage implements StorySaveStorage {
 const STORY_PACKAGE = storyLoader.load('zavalinka');
 const STORAGE_KEY = 'text-quest-anthology.story-save.zavalinka';
 
+function findChoice(snapshot: StoryReaderSnapshot, textStart: string): number {
+  const choice = snapshot.choices.find(item => item.text.startsWith(textStart));
+
+  if (!choice) {
+    throw new Error(`Expected choice starting with "${textStart}".`);
+  }
+
+  return choice.index;
+}
+
 describe('StorySession persistence flow', () => {
-  test('restores choices from a saved Ink state before a choice', async () => {
+  test('fresh story exposes multiple pages before the first choice', async () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
-    const firstOpen = await StorySession.open(STORY_PACKAGE, repository);
+    const opened = await StorySession.open(STORY_PACKAGE, repository);
 
-    expect(firstOpen.resumed).toBe(false);
-    expect(firstOpen.snapshot.choices).toHaveLength(2);
-    expect(firstOpen.snapshot.passages).toEqual([
-      'Техническая история: свет в подъезде погас.',
-    ]);
-    await expect(firstOpen.session.flush()).resolves.toBe(true);
-
-    const restored = await StorySession.open(STORY_PACKAGE, repository);
-
-    expect(restored.resumed).toBe(true);
-    expect(restored.recovery).toBeNull();
-    expect(restored.snapshot.choices).toEqual(firstOpen.snapshot.choices);
-    expect(restored.snapshot.passages).toEqual(firstOpen.snapshot.passages);
-    expect(restored.snapshot.isEnded).toBe(false);
+    expect(opened.resumed).toBe(false);
+    expect(opened.snapshot.choices).toHaveLength(2);
+    expect(opened.snapshot.pageIndex).toBe(0);
+    expect(opened.snapshot.pageCount).toBeGreaterThanOrEqual(4);
+    expect(opened.snapshot.hasNextPage).toBe(true);
+    expect(opened.snapshot.pageText).toBe(opened.snapshot.passages[0]);
   });
 
-  test('choice autosave restores Ink variables, transcript and terminal state', async () => {
+  test('next page persists and resumes the exact reader page', async () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
-    const firstOpen = await StorySession.open(STORY_PACKAGE, repository);
-    const result = await firstOpen.session.choose(
-      firstOpen.snapshot.choices[0].index,
+    const opened = await StorySession.open(STORY_PACKAGE, repository);
+    const advanced = await opened.session.nextPage();
+
+    expect(advanced.persisted).toBe(true);
+    expect(advanced.snapshot.pageIndex).toBe(1);
+    expect(advanced.snapshot.pageText).toBe(advanced.snapshot.passages[1]);
+
+    const stored = await repository.load('zavalinka');
+    expect(stored.status).toBe('loaded');
+
+    if (stored.status !== 'loaded') {
+      throw new Error('Expected a saved page position.');
+    }
+
+    expect(stored.save.readerPageIndex).toBe(1);
+
+    const restored = await StorySession.open(STORY_PACKAGE, repository);
+    expect(restored.resumed).toBe(true);
+    expect(restored.snapshot.pageIndex).toBe(1);
+    expect(restored.snapshot.pageText).toBe(advanced.snapshot.pageText);
+    expect(restored.snapshot.choices).toEqual(advanced.snapshot.choices);
+  });
+
+  test('page navigation stops at the current text block boundary', async () => {
+    const repository = new StorySaveRepository(new MemoryStorySaveStorage());
+    const opened = await StorySession.open(STORY_PACKAGE, repository);
+    let snapshot = opened.snapshot;
+
+    while (snapshot.hasNextPage) {
+      snapshot = (await opened.session.nextPage()).snapshot;
+    }
+
+    expect(snapshot.pageIndex).toBe(snapshot.pageCount - 1);
+    expect(snapshot.choices).toHaveLength(2);
+    await expect(opened.session.nextPage()).rejects.toThrow('READER_PAGE_END');
+  });
+
+  test('choice starts a new page block and keeps the feed transcript', async () => {
+    const repository = new StorySaveRepository(new MemoryStorySaveStorage());
+    const opened = await StorySession.open(STORY_PACKAGE, repository);
+    const initialPassageCount = opened.snapshot.passages.length;
+    const result = await opened.session.choose(
+      findChoice(opened.snapshot, 'Подойти к двери'),
     );
 
     expect(result.persisted).toBe(true);
-    expect(result.snapshot.endingId).toBe('ending_a');
-    expect(result.snapshot.passages).toEqual([
-      'Техническая история: свет в подъезде погас.',
-      'Ты открываешь дверь и выходишь в коридор.',
-    ]);
+    expect(result.snapshot.isEnded).toBe(false);
+    expect(result.snapshot.pageIndex).toBe(0);
+    expect(result.snapshot.pageCount).toBeGreaterThanOrEqual(3);
+    expect(result.snapshot.choices).toHaveLength(3);
+    expect(result.snapshot.passages.length).toBeGreaterThan(initialPassageCount);
+    expect(result.snapshot.pageText).toBe(
+      result.snapshot.passages[initialPassageCount],
+    );
+  });
+
+  test('terminal choice autosaves ending and transcript', async () => {
+    const repository = new StorySaveRepository(new MemoryStorySaveStorage());
+    const opened = await StorySession.open(STORY_PACKAGE, repository);
+    const nearDoor = await opened.session.choose(
+      findChoice(opened.snapshot, 'Подойти к двери'),
+    );
+    const completed = await opened.session.choose(
+      findChoice(nearDoor.snapshot, 'Открыть дверь'),
+    );
+
+    expect(completed.snapshot.isEnded).toBe(true);
+    expect(completed.snapshot.endingId).toBe('ending_open');
+    expect(completed.snapshot.text).toContain('площадке');
 
     const stored = await repository.load('zavalinka');
     expect(stored.status).toBe('loaded');
 
     if (stored.status !== 'loaded') {
-      throw new Error('Expected autosaved story state.');
+      throw new Error('Expected autosaved terminal story state.');
     }
 
-    const inkState = JSON.parse(stored.save.runtimeState) as {
-      variablesState?: {opened_door?: boolean};
-    };
-    expect(inkState.variablesState?.opened_door).toBe(true);
-    expect(stored.save.readerPassages).toEqual(result.snapshot.passages);
-
-    const restored = await StorySession.open(STORY_PACKAGE, repository);
-    expect(restored.resumed).toBe(true);
-    expect(restored.snapshot.choices).toHaveLength(0);
-    expect(restored.snapshot.isEnded).toBe(true);
-    expect(restored.snapshot.endingId).toBe('ending_a');
-    expect(restored.snapshot.passages).toEqual(result.snapshot.passages);
+    expect(stored.save.completed).toBe(true);
+    expect(stored.save.endingId).toBe('ending_open');
+    expect(stored.save.readerPassages).toEqual(completed.snapshot.passages);
   });
 
-  test('legacy save without reader transcript falls back to current Ink text', async () => {
+  test('legacy save without page index resumes at the end of its text block', async () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
-    const firstOpen = await StorySession.open(STORY_PACKAGE, repository);
-    const completed = await firstOpen.session.choose(
-      firstOpen.snapshot.choices[1].index,
+    const opened = await StorySession.open(STORY_PACKAGE, repository);
+    const nearDoor = await opened.session.choose(
+      findChoice(opened.snapshot, 'Подойти к двери'),
     );
 
     const stored = await repository.load('zavalinka');
     expect(stored.status).toBe('loaded');
 
     if (stored.status !== 'loaded') {
-      throw new Error('Expected autosaved story state.');
+      throw new Error('Expected a save fixture.');
     }
 
     const legacySave: StorySave = {
@@ -113,9 +164,11 @@ describe('StorySession persistence flow', () => {
     const restored = await StorySession.open(STORY_PACKAGE, repository);
 
     expect(restored.resumed).toBe(true);
-    expect(restored.snapshot.isEnded).toBe(true);
-    expect(restored.snapshot.endingId).toBe('ending_b');
-    expect(restored.snapshot.passages).toEqual([completed.snapshot.text]);
+    expect(restored.snapshot.pageIndex).toBe(restored.snapshot.pageCount - 1);
+    expect(restored.snapshot.pageText).toBe(
+      nearDoor.snapshot.passages[nearDoor.snapshot.passages.length - 1],
+    );
+    expect(restored.snapshot.choices).toHaveLength(3);
   });
 
   test('corrupted Ink payload is reset instead of causing a crash loop', async () => {
@@ -138,6 +191,7 @@ describe('StorySession persistence flow', () => {
     expect(opened.resumed).toBe(false);
     expect(opened.recovery).toBe('corrupted-save-reset');
     expect(opened.snapshot.choices).toHaveLength(2);
+    expect(opened.snapshot.pageIndex).toBe(0);
     await expect(repository.load('zavalinka')).resolves.toEqual({
       status: 'not-found',
     });
@@ -145,8 +199,8 @@ describe('StorySession persistence flow', () => {
 
   test('incompatible contentVersion is explicitly reset', async () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
-    const firstOpen = await StorySession.open(STORY_PACKAGE, repository);
-    await firstOpen.session.flush();
+    const opened = await StorySession.open(STORY_PACKAGE, repository);
+    await opened.session.flush();
 
     const stored = await repository.load('zavalinka');
     expect(stored.status).toBe('loaded');
@@ -160,23 +214,21 @@ describe('StorySession persistence flow', () => {
       storyContentVersion: STORY_PACKAGE.metadata.contentVersion + 1,
     });
 
-    const opened = await StorySession.open(STORY_PACKAGE, repository);
+    const restored = await StorySession.open(STORY_PACKAGE, repository);
 
-    expect(opened.resumed).toBe(false);
-    expect(opened.recovery).toBe('incompatible-save-reset');
-    expect(opened.snapshot.choices).toHaveLength(2);
+    expect(restored.resumed).toBe(false);
+    expect(restored.recovery).toBe('incompatible-save-reset');
+    expect(restored.snapshot.pageIndex).toBe(0);
     await expect(repository.load('zavalinka')).resolves.toEqual({
       status: 'not-found',
     });
   });
 
-  test('restart creates a fresh runtime, transcript and save', async () => {
+  test('restart resets runtime, transcript and page position', async () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
     const opened = await StorySession.open(STORY_PACKAGE, repository);
-    const completed = await opened.session.choose(opened.snapshot.choices[0].index);
-
-    expect(completed.snapshot.isEnded).toBe(true);
-    expect(completed.snapshot.passages).toHaveLength(2);
+    await opened.session.nextPage();
+    await opened.session.choose(findChoice(opened.snapshot, 'Подойти к двери'));
 
     const restarted = await opened.session.restart();
 
@@ -184,13 +236,12 @@ describe('StorySession persistence flow', () => {
     expect(restarted.snapshot.isEnded).toBe(false);
     expect(restarted.snapshot.endingId).toBeNull();
     expect(restarted.snapshot.choices).toHaveLength(2);
-    expect(restarted.snapshot.passages).toEqual([
-      'Техническая история: свет в подъезде погас.',
-    ]);
+    expect(restarted.snapshot.pageIndex).toBe(0);
+    expect(restarted.snapshot.passages).toHaveLength(restarted.snapshot.pageCount);
 
     const restored = await StorySession.open(STORY_PACKAGE, repository);
     expect(restored.resumed).toBe(true);
-    expect(restored.snapshot.choices).toEqual(restarted.snapshot.choices);
+    expect(restored.snapshot.pageIndex).toBe(0);
     expect(restored.snapshot.passages).toEqual(restarted.snapshot.passages);
   });
 

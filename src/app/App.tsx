@@ -28,6 +28,7 @@ const DEFAULT_STORY = storyLoader.listMetadata()[0];
 const AdsBanner = adsProvider.Banner;
 
 type AppScreen = 'start' | 'reader' | 'ending';
+type ReaderMode = 'pages' | 'feed';
 
 if (!DEFAULT_STORY) {
   throw new Error('STORY_NOT_FOUND: Generated story manifest is empty.');
@@ -41,6 +42,7 @@ export function App(): React.JSX.Element {
   const mutationLockRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
   const [screen, setScreen] = useState<AppScreen>('start');
+  const [readerMode, setReaderMode] = useState<ReaderMode>('pages');
   const [snapshot, setSnapshot] = useState<StoryReaderSnapshot | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -128,7 +130,6 @@ export function App(): React.JSX.Element {
       }
 
       const session = sessionRef.current;
-
       if (!session || !hasStartedSessionRef.current) {
         return;
       }
@@ -180,6 +181,24 @@ export function App(): React.JSX.Element {
       }
 
       setScreen(snapshot.isEnded ? 'ending' : 'reader');
+    } catch {
+      setNotice(UI_STRINGS.storyActionFailed);
+    } finally {
+      endMutation();
+    }
+  };
+
+  const nextPage = async () => {
+    const session = sessionRef.current;
+
+    if (!session || !beginMutation()) {
+      return;
+    }
+
+    try {
+      const result = await session.nextPage();
+      setSnapshot(result.snapshot);
+      setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
     } catch {
       setNotice(UI_STRINGS.storyActionFailed);
     } finally {
@@ -267,6 +286,37 @@ export function App(): React.JSX.Element {
     startActionLabel = UI_STRINGS.viewEnding;
   }
 
+  const renderChoices = () => {
+    if (!snapshot || snapshot.choices.length === 0) {
+      return null;
+    }
+
+    return (
+      <View accessibilityLabel={UI_STRINGS.choicesLabel} style={styles.choicesZone}>
+        {snapshot.choices.map(choice => (
+          <Pressable
+            accessibilityLabel={choice.text}
+            accessibilityRole="button"
+            disabled={isBusy}
+            key={choice.index}
+            onPress={() => {
+              void choose(choice.index);
+            }}
+            style={({pressed}) => [
+              styles.choice,
+              isDarkMode && styles.choiceDark,
+              pressed && styles.buttonPressed,
+              isBusy && styles.disabled,
+            ]}>
+            <Text style={[styles.choiceText, isDarkMode && styles.textDark]}>
+              {choice.text}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
@@ -274,9 +324,7 @@ export function App(): React.JSX.Element {
         <AdsBanner isDarkMode={isDarkMode} />
 
         {screen === 'start' ? (
-          <ScrollView
-            contentContainerStyle={styles.startContent}
-            style={styles.screen}>
+          <View style={[styles.screen, styles.startContent]}>
             <Text style={[styles.title, isDarkMode && styles.textDark]}>
               {DEFAULT_STORY.title}
             </Text>
@@ -286,6 +334,53 @@ export function App(): React.JSX.Element {
             <Text style={[styles.description, isDarkMode && styles.textMutedDark]}>
               {DEFAULT_STORY.description}
             </Text>
+
+            <View style={styles.modeBlock}>
+              <Text style={[styles.sectionLabel, isDarkMode && styles.textMutedDark]}>
+                {UI_STRINGS.readerModeLabel}
+              </Text>
+              <View style={styles.modeSelector}>
+                {(['pages', 'feed'] as const).map(mode => {
+                  const selected = readerMode === mode;
+                  const label =
+                    mode === 'pages'
+                      ? UI_STRINGS.readerModePages
+                      : UI_STRINGS.readerModeFeed;
+
+                  return (
+                    <Pressable
+                      accessibilityLabel={label}
+                      accessibilityRole="button"
+                      accessibilityState={{selected}}
+                      disabled={isBusy}
+                      key={mode}
+                      onPress={() => setReaderMode(mode)}
+                      style={({pressed}) => [
+                        styles.modeButton,
+                        isDarkMode && styles.modeButtonDark,
+                        selected && styles.modeButtonSelected,
+                        isDarkMode && selected && styles.modeButtonSelectedDark,
+                        pressed && styles.buttonPressed,
+                        isBusy && styles.disabled,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.modeButtonText,
+                          isDarkMode && styles.textDark,
+                          selected && styles.modeButtonTextSelected,
+                        ]}>
+                        {label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[styles.modeHint, isDarkMode && styles.textMutedDark]}>
+                {readerMode === 'pages'
+                  ? UI_STRINGS.readerModePagesHint
+                  : UI_STRINGS.readerModeFeedHint}
+              </Text>
+            </View>
 
             {notice ? (
               <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>
@@ -346,7 +441,7 @@ export function App(): React.JSX.Element {
                 ) : null}
               </View>
             ) : null}
-          </ScrollView>
+          </View>
         ) : null}
 
         {screen === 'reader' && snapshot ? (
@@ -368,100 +463,128 @@ export function App(): React.JSX.Element {
                 </Text>
               </Pressable>
               <Text style={[styles.readerTitle, isDarkMode && styles.textDark]}>
-                {DEFAULT_STORY.title}
+                {readerMode === 'pages'
+                  ? UI_STRINGS.readerModePages
+                  : UI_STRINGS.readerModeFeed}
               </Text>
             </View>
 
             {notice ? (
-              <Text
-                style={[
-                  styles.readerNotice,
-                  isDarkMode && styles.noticeDark,
-                ]}>
+              <Text style={[styles.readerNotice, isDarkMode && styles.noticeDark]}>
                 {notice}
               </Text>
             ) : null}
 
-            <ScrollView
-              contentContainerStyle={styles.readerContent}
-              style={styles.readerScroll}>
-              <View
-                accessibilityLabel="Текст истории"
-                style={[styles.storySurface, isDarkMode && styles.storySurfaceDark]}>
-                {snapshot.passages.map((passage, index) => (
-                  <Text
-                    key={`${index}-${passage.slice(0, 24)}`}
-                    style={[
-                      styles.storyPassage,
-                      index > 0 && styles.storyPassageSpacing,
-                      isDarkMode && styles.textDark,
-                    ]}>
-                    {passage}
-                  </Text>
-                ))}
-              </View>
-
-              {snapshot.choices.length > 0 ? (
+            {readerMode === 'pages' ? (
+              <View style={styles.pageReaderContent}>
                 <View
-                  accessibilityLabel={UI_STRINGS.choicesLabel}
-                  style={styles.choicesZone}>
+                  accessibilityLabel="Текст текущей страницы"
+                  style={[
+                    styles.storySurface,
+                    styles.pageStorySurface,
+                    isDarkMode && styles.storySurfaceDark,
+                  ]}>
+                  <Text style={[styles.storyPassage, isDarkMode && styles.textDark]}>
+                    {snapshot.pageText}
+                  </Text>
+                </View>
+
+                <Text style={[styles.pageCounter, isDarkMode && styles.textMutedDark]}>
+                  {UI_STRINGS.pageLabel} {snapshot.pageIndex + 1}/{snapshot.pageCount}
+                </Text>
+
+                {snapshot.hasNextPage ? (
+                  <Pressable
+                    accessibilityLabel={UI_STRINGS.nextPage}
+                    accessibilityRole="button"
+                    disabled={isBusy}
+                    onPress={() => {
+                      void nextPage();
+                    }}
+                    style={({pressed}) => [
+                      styles.primaryButton,
+                      isDarkMode && styles.primaryButtonDark,
+                      pressed && styles.buttonPressed,
+                      isBusy && styles.disabled,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.primaryButtonText,
+                        isDarkMode && styles.primaryButtonTextDark,
+                      ]}>
+                      {UI_STRINGS.nextPage}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  renderChoices()
+                )}
+
+                <Pressable
+                  accessibilityLabel={UI_STRINGS.restart}
+                  accessibilityRole="button"
+                  disabled={isBusy}
+                  onPress={requestRestart}
+                  style={({pressed}) => [
+                    styles.readerRestart,
+                    pressed && styles.buttonPressed,
+                    isBusy && styles.disabled,
+                  ]}>
                   <Text
                     style={[
-                      styles.sectionLabel,
+                      styles.readerRestartText,
                       isDarkMode && styles.textMutedDark,
                     ]}>
-                    {UI_STRINGS.choicesLabel}
+                    {UI_STRINGS.restart}
                   </Text>
-                  {snapshot.choices.map(choice => (
-                    <Pressable
-                      accessibilityLabel={choice.text}
-                      accessibilityRole="button"
-                      disabled={isBusy}
-                      key={choice.index}
-                      onPress={() => {
-                        void choose(choice.index);
-                      }}
-                      style={({pressed}) => [
-                        styles.choice,
-                        isDarkMode && styles.choiceDark,
-                        pressed && styles.buttonPressed,
-                        isBusy && styles.disabled,
+                </Pressable>
+              </View>
+            ) : (
+              <ScrollView
+                contentContainerStyle={styles.readerContent}
+                style={styles.readerScroll}>
+                <View
+                  accessibilityLabel="Текст истории"
+                  style={[styles.storySurface, isDarkMode && styles.storySurfaceDark]}>
+                  {snapshot.passages.map((passage, index) => (
+                    <Text
+                      key={`${index}-${passage.slice(0, 24)}`}
+                      style={[
+                        styles.storyPassage,
+                        index > 0 && styles.storyPassageSpacing,
+                        isDarkMode && styles.textDark,
                       ]}>
-                      <Text
-                        style={[styles.choiceText, isDarkMode && styles.textDark]}>
-                        {choice.text}
-                      </Text>
-                    </Pressable>
+                      {passage}
+                    </Text>
                   ))}
                 </View>
-              ) : null}
 
-              <Pressable
-                accessibilityLabel={UI_STRINGS.restart}
-                accessibilityRole="button"
-                disabled={isBusy}
-                onPress={requestRestart}
-                style={({pressed}) => [
-                  styles.readerRestart,
-                  pressed && styles.buttonPressed,
-                  isBusy && styles.disabled,
-                ]}>
-                <Text
-                  style={[
-                    styles.readerRestartText,
-                    isDarkMode && styles.textMutedDark,
+                {renderChoices()}
+
+                <Pressable
+                  accessibilityLabel={UI_STRINGS.restart}
+                  accessibilityRole="button"
+                  disabled={isBusy}
+                  onPress={requestRestart}
+                  style={({pressed}) => [
+                    styles.readerRestart,
+                    pressed && styles.buttonPressed,
+                    isBusy && styles.disabled,
                   ]}>
-                  {UI_STRINGS.restart}
-                </Text>
-              </Pressable>
-            </ScrollView>
+                  <Text
+                    style={[
+                      styles.readerRestartText,
+                      isDarkMode && styles.textMutedDark,
+                    ]}>
+                    {UI_STRINGS.restart}
+                  </Text>
+                </Pressable>
+              </ScrollView>
+            )}
           </View>
         ) : null}
 
         {screen === 'ending' && snapshot ? (
-          <ScrollView
-            contentContainerStyle={styles.endingContent}
-            style={styles.screen}>
+          <View style={[styles.screen, styles.endingContent]}>
             <Text style={[styles.endingEyebrow, isDarkMode && styles.textMutedDark]}>
               {UI_STRINGS.endingLabel}
             </Text>
@@ -523,7 +646,7 @@ export function App(): React.JSX.Element {
                 </Text>
               </Pressable>
             </View>
-          </ScrollView>
+          </View>
         ) : null}
       </SafeAreaView>
     </SafeAreaProvider>
@@ -555,239 +678,279 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   startContent: {
-    flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 28,
+    padding: 24,
+    gap: 14,
   },
   title: {
-    color: '#111111',
     fontSize: 30,
+    lineHeight: 36,
     fontWeight: '700',
-    textAlign: 'center',
+    color: '#111111',
   },
   status: {
-    color: '#4b5563',
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 8,
-    textAlign: 'center',
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#666666',
   },
   description: {
-    color: '#4b5563',
     fontSize: 16,
-    lineHeight: 24,
-    marginTop: 24,
-    textAlign: 'center',
+    lineHeight: 23,
+    color: '#555555',
   },
-  loading: {
-    color: '#111111',
-    fontSize: 16,
-    marginTop: 24,
-    textAlign: 'center',
+  modeBlock: {
+    gap: 8,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: '#666666',
+  },
+  modeSelector: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  modeButton: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#cccccc',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+  },
+  modeButtonDark: {
+    borderColor: '#555555',
+  },
+  modeButtonSelected: {
+    borderWidth: 2,
+    borderColor: '#111111',
+  },
+  modeButtonSelectedDark: {
+    borderColor: '#ffffff',
+  },
+  modeButtonText: {
+    fontSize: 15,
+    lineHeight: 20,
+    color: '#222222',
+  },
+  modeButtonTextSelected: {
+    fontWeight: '700',
+  },
+  modeHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#666666',
   },
   notice: {
-    color: '#92400e',
+    borderRadius: 8,
+    padding: 10,
+    backgroundColor: '#f4f4f4',
+    color: '#333333',
     fontSize: 14,
     lineHeight: 20,
-    marginTop: 18,
-    textAlign: 'center',
   },
   noticeDark: {
-    color: '#fcd34d',
+    backgroundColor: '#252525',
+    color: '#eeeeee',
+  },
+  loading: {
+    fontSize: 15,
+    color: '#222222',
   },
   startActions: {
-    gap: 12,
-    marginTop: 28,
+    gap: 10,
   },
   primaryButton: {
-    alignItems: 'center',
-    backgroundColor: '#111111',
-    borderRadius: 12,
-    justifyContent: 'center',
     minHeight: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
     paddingHorizontal: 18,
-    paddingVertical: 14,
+    backgroundColor: '#111111',
   },
   primaryButtonDark: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#f0f0f0',
   },
   primaryButtonText: {
-    color: '#ffffff',
-    flexShrink: 1,
-    fontSize: 17,
+    fontSize: 16,
+    lineHeight: 22,
     fontWeight: '700',
-    lineHeight: 23,
+    color: '#ffffff',
     textAlign: 'center',
   },
   primaryButtonTextDark: {
     color: '#111111',
   },
   secondaryButton: {
+    minHeight: 48,
     alignItems: 'center',
-    borderColor: '#9ca3af',
+    justifyContent: 'center',
     borderRadius: 12,
     borderWidth: 1,
-    justifyContent: 'center',
-    minHeight: 52,
+    borderColor: '#cccccc',
     paddingHorizontal: 18,
-    paddingVertical: 14,
   },
   secondaryButtonDark: {
-    borderColor: '#6b7280',
+    borderColor: '#555555',
   },
   secondaryButtonText: {
-    color: '#111111',
-    flexShrink: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    lineHeight: 22,
-    textAlign: 'center',
-  },
-  readerHeader: {
-    borderBottomColor: '#e5e7eb',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-  },
-  headerDark: {
-    borderBottomColor: '#374151',
-  },
-  headerAction: {
-    alignSelf: 'flex-start',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  headerActionText: {
-    color: '#111111',
     fontSize: 15,
-    fontWeight: '600',
-  },
-  readerTitle: {
-    color: '#111111',
-    fontSize: 22,
-    fontWeight: '700',
-    lineHeight: 28,
-    marginTop: 4,
-  },
-  readerNotice: {
-    color: '#92400e',
-    fontSize: 14,
-    lineHeight: 20,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    textAlign: 'center',
-  },
-  readerScroll: {
-    flex: 1,
-  },
-  readerContent: {
-    paddingBottom: 32,
-    paddingHorizontal: 18,
-    paddingTop: 18,
-  },
-  storySurface: {
-    backgroundColor: '#f3f4f6',
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-  },
-  storySurfaceDark: {
-    backgroundColor: '#1f2937',
-  },
-  storyPassage: {
-    color: '#111111',
-    fontSize: 18,
-    lineHeight: 28,
-  },
-  storyPassageSpacing: {
-    marginTop: 18,
-  },
-  choicesZone: {
-    marginTop: 22,
-  },
-  sectionLabel: {
-    color: '#4b5563',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  choice: {
-    borderColor: '#9ca3af',
-    borderRadius: 12,
-    borderWidth: 1,
-    justifyContent: 'center',
-    marginTop: 12,
-    minHeight: 52,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  choiceDark: {
-    borderColor: '#6b7280',
-  },
-  choiceText: {
-    color: '#111111',
-    flexShrink: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    lineHeight: 23,
-    textAlign: 'left',
-  },
-  readerRestart: {
-    alignSelf: 'center',
-    justifyContent: 'center',
-    marginTop: 24,
-    minHeight: 48,
-    paddingHorizontal: 16,
-  },
-  readerRestartText: {
-    color: '#4b5563',
-    fontSize: 15,
-    fontWeight: '600',
-    textDecorationLine: 'underline',
-  },
-  endingContent: {
-    flexGrow: 1,
-    paddingBottom: 32,
-    paddingHorizontal: 24,
-    paddingTop: 28,
-  },
-  endingEyebrow: {
-    color: '#4b5563',
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-    textTransform: 'uppercase',
-  },
-  endingId: {
-    color: '#111111',
-    fontSize: 28,
-    fontWeight: '700',
-    lineHeight: 34,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  finalTextLabel: {
-    color: '#4b5563',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-    marginTop: 26,
-  },
-  endingActions: {
-    gap: 12,
-    marginTop: 28,
+    lineHeight: 21,
+    color: '#222222',
   },
   buttonPressed: {
     opacity: 0.65,
   },
   disabled: {
-    opacity: 0.5,
+    opacity: 0.45,
+  },
+  readerHeader: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e4e4e4',
+  },
+  headerDark: {
+    borderBottomColor: '#333333',
+  },
+  headerAction: {
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  headerActionText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#222222',
+  },
+  readerTitle: {
+    flexShrink: 1,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+    color: '#222222',
+    textAlign: 'right',
+  },
+  readerNotice: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    borderRadius: 8,
+    padding: 9,
+    backgroundColor: '#f4f4f4',
+    color: '#333333',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  pageReaderContent: {
+    flex: 1,
+    padding: 16,
+    gap: 10,
+  },
+  readerScroll: {
+    flex: 1,
+  },
+  readerContent: {
+    padding: 16,
+    gap: 16,
+    paddingBottom: 28,
+  },
+  storySurface: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 14,
+    padding: 18,
+    backgroundColor: '#fafafa',
+  },
+  storySurfaceDark: {
+    borderColor: '#333333',
+    backgroundColor: '#1b1b1b',
+  },
+  pageStorySurface: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  storyPassage: {
+    fontSize: 18,
+    lineHeight: 28,
+    color: '#171717',
+  },
+  storyPassageSpacing: {
+    marginTop: 18,
+  },
+  pageCounter: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#666666',
+    textAlign: 'center',
+  },
+  choicesZone: {
+    gap: 8,
+  },
+  choice: {
+    minHeight: 52,
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#cfcfcf',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#ffffff',
+  },
+  choiceDark: {
+    borderColor: '#444444',
+    backgroundColor: '#1a1a1a',
+  },
+  choiceText: {
+    fontSize: 16,
+    lineHeight: 22,
+    color: '#222222',
+  },
+  readerRestart: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  readerRestartText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#666666',
+  },
+  endingContent: {
+    justifyContent: 'center',
+    padding: 24,
+    gap: 12,
+  },
+  endingEyebrow: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: '#666666',
+  },
+  endingId: {
+    fontSize: 26,
+    lineHeight: 32,
+    fontWeight: '700',
+    color: '#111111',
+  },
+  finalTextLabel: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#666666',
+  },
+  endingActions: {
+    gap: 10,
   },
   textDark: {
-    color: '#f9fafb',
+    color: '#f3f3f3',
   },
   textMutedDark: {
-    color: '#d1d5db',
+    color: '#b8b8b8',
   },
 });

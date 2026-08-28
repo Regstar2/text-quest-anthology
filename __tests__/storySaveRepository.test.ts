@@ -40,12 +40,13 @@ function makeSave(storyId: string): StorySave {
 }
 
 describe('StorySaveRepository', () => {
-  test('save -> load round trip preserves the save contract', async () => {
+  test('save -> load round trip preserves reader transcript and page index', async () => {
     const storage = new MemoryStorySaveStorage();
     const repository = new StorySaveRepository(storage);
     const save: StorySave = {
       ...makeSave('story-a'),
-      readerPassages: ['Первый абзац.', 'Второй абзац.'],
+      readerPassages: ['Первая страница.', 'Вторая страница.'],
+      readerPageIndex: 1,
     };
 
     await repository.save('story-a', save);
@@ -56,7 +57,7 @@ describe('StorySaveRepository', () => {
     });
   });
 
-  test('legacy save without reader passages remains loadable', async () => {
+  test('legacy save without reader fields remains loadable', async () => {
     const storage = new MemoryStorySaveStorage();
     const repository = new StorySaveRepository(storage);
     const save = makeSave('story-a');
@@ -93,6 +94,24 @@ describe('StorySaveRepository', () => {
       JSON.stringify({
         ...makeSave('story-a'),
         readerPassages: ['valid', 42],
+      }),
+    );
+
+    await expect(repository.load('story-a')).resolves.toEqual({
+      status: 'corrupted',
+      reason: 'invalid-shape',
+    });
+  });
+
+  test('invalid reader page index is rejected as a corrupted save', async () => {
+    const storage = new MemoryStorySaveStorage();
+    const repository = new StorySaveRepository(storage);
+
+    storage.seed(
+      storageKey('story-a'),
+      JSON.stringify({
+        ...makeSave('story-a'),
+        readerPageIndex: -1,
       }),
     );
 
