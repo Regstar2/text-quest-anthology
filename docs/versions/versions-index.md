@@ -11,22 +11,27 @@
 | `v0.1.2` | Story Package + validation | 30.08.2026 |
 | `v0.1.3` | Local saves / resume / reset | 31.08.2026 |
 | `v0.1.4` | AdsProvider + Yandex demo integration | 01.09.2026 |
-| `v0.1.5` | Reader vertical slice | 02.09.2026 |
-| `v0.1.6` | Full «Завалинка» narrative skeleton | 03.09.2026 |
+| `v0.1.5` | Mobile reader vertical slice | 02.09.2026 |
+| `v0.1.6` | Real «Завалинка» vertical slice through runtime/save/ads boundaries | 02.09.2026 |
+| `v0.1.7` | Technical prototype gate + manifest-backed anthology navigation + architecture freeze | 02.09.2026 |
 
 `v0.1.x` подтверждает технологический pipeline. Финальный литературный текст не является целью этой серии.
 
+`v0.1.7` закрывает техническую фазу только после успешного device smoke pass. До него допустим verdict `PROCEED WITH CONSTRAINT`; архитектурные или data-loss blockers требуют `REWORK`.
+
 ## v0.2.x — Zavalinka Content
 
-| Версия | Назначение | Целевая дата |
-|---|---|---|
-| `v0.2.0` | Settlement + House prose | 04.09.2026 |
-| `v0.2.1` | Preparation + Night prose | 05.09.2026 |
-| `v0.2.2` | Assault prose | 06.09.2026 |
-| `v0.2.3` | Attic + terminal endings | 07.09.2026 |
-| `v0.2.4` | Consistency + literary pass | 08.09.2026 |
+Контентный цикл начинается с полного Ink skeleton, после чего работа идёт только по существующему сюжетному графу:
 
-После `v0.2.3` новый сюжетный scope не добавляется. `v0.2.4` исправляет существующий материал и граф.
+1. полный Ink skeleton;
+2. написание сцен;
+3. consistency pass;
+4. literary pass;
+5. content freeze.
+
+Точное разбиение написания сцен по patch-версиям может корректироваться без добавления новых технических подсистем. После content freeze новый сюжетный scope не добавляется.
+
+Архитектура, зафиксированная gate `v0.1.7`, считается базовой для всего `v0.2.x`: generated manifest → `StoryLoader` → `StorySession` / Ink → per-story save repository → общий reader.
 
 ## v0.3.x — Release Preparation
 
