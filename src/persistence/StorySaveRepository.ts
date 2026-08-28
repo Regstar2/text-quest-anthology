@@ -85,8 +85,9 @@ function isStorySave(value: unknown): value is StorySave {
   if (
     typeof value.storyId !== 'string' ||
     value.storyId.length === 0 ||
+    typeof value.storyContentVersion !== 'number' ||
     !Number.isInteger(value.storyContentVersion) ||
-    (value.storyContentVersion as number) < 1 ||
+    value.storyContentVersion < 1 ||
     typeof value.runtimeState !== 'string' ||
     value.runtimeState.length === 0 ||
     !isTimestamp(value.startedAt) ||
