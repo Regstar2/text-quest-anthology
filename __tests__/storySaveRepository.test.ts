@@ -40,7 +40,24 @@ function makeSave(storyId: string): StorySave {
 }
 
 describe('StorySaveRepository', () => {
-  test('save -> load round trip preserves the save contract', async () => {
+  test('save -> load round trip preserves reader transcript and page index', async () => {
+    const storage = new MemoryStorySaveStorage();
+    const repository = new StorySaveRepository(storage);
+    const save: StorySave = {
+      ...makeSave('story-a'),
+      readerPassages: ['Первая страница.', 'Вторая страница.'],
+      readerPageIndex: 1,
+    };
+
+    await repository.save('story-a', save);
+
+    await expect(repository.load('story-a')).resolves.toEqual({
+      status: 'loaded',
+      save,
+    });
+  });
+
+  test('legacy save without reader fields remains loadable', async () => {
     const storage = new MemoryStorySaveStorage();
     const repository = new StorySaveRepository(storage);
     const save = makeSave('story-a');
@@ -65,6 +82,42 @@ describe('StorySaveRepository', () => {
     });
     await expect(repository.load('story-b')).resolves.toEqual({
       status: 'not-found',
+    });
+  });
+
+  test('invalid reader passages are rejected as a corrupted save', async () => {
+    const storage = new MemoryStorySaveStorage();
+    const repository = new StorySaveRepository(storage);
+
+    storage.seed(
+      storageKey('story-a'),
+      JSON.stringify({
+        ...makeSave('story-a'),
+        readerPassages: ['valid', 42],
+      }),
+    );
+
+    await expect(repository.load('story-a')).resolves.toEqual({
+      status: 'corrupted',
+      reason: 'invalid-shape',
+    });
+  });
+
+  test('invalid reader page index is rejected as a corrupted save', async () => {
+    const storage = new MemoryStorySaveStorage();
+    const repository = new StorySaveRepository(storage);
+
+    storage.seed(
+      storageKey('story-a'),
+      JSON.stringify({
+        ...makeSave('story-a'),
+        readerPageIndex: -1,
+      }),
+    );
+
+    await expect(repository.load('story-a')).resolves.toEqual({
+      status: 'corrupted',
+      reason: 'invalid-shape',
     });
   });
 

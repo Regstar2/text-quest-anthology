@@ -11,25 +11,33 @@ export type StorySessionRecovery =
   | 'incompatible-save-reset'
   | 'storage-unavailable';
 
+export type StoryReaderSnapshot = InkRuntimeSnapshot &
+  Readonly<{
+    passages: readonly string[];
+    pageIndex: number;
+  }>;
+
 export type StorySessionOpenResult = Readonly<{
   session: StorySession;
-  snapshot: InkRuntimeSnapshot;
+  snapshot: StoryReaderSnapshot;
   resumed: boolean;
   recovery: StorySessionRecovery | null;
 }>;
 
 export type StorySessionMutationResult = Readonly<{
-  snapshot: InkRuntimeSnapshot;
+  snapshot: StoryReaderSnapshot;
   persisted: boolean;
 }>;
 
 type Clock = () => Date;
-
 const systemClock: Clock = () => new Date();
 
 export class StorySession {
   private runtime: InkStoryRuntime;
   private currentSnapshot: InkRuntimeSnapshot;
+  private currentReaderText: string;
+  private readerPassages: string[];
+  private readerPageIndex: number;
   private startedAt: string;
 
   private constructor(
@@ -38,10 +46,16 @@ export class StorySession {
     private readonly clock: Clock,
     runtime: InkStoryRuntime,
     snapshot: InkRuntimeSnapshot,
+    currentReaderText: string,
+    readerPassages: readonly string[],
+    readerPageIndex: number,
     startedAt: string,
   ) {
     this.runtime = runtime;
     this.currentSnapshot = snapshot;
+    this.currentReaderText = currentReaderText;
+    this.readerPassages = [...readerPassages];
+    this.readerPageIndex = Math.max(0, readerPageIndex);
     this.startedAt = startedAt;
   }
 
@@ -105,16 +119,24 @@ export class StorySession {
         );
       }
 
-      return {
-        session: new StorySession(
-          storyPackage,
-          repository,
-          clock,
-          runtime,
-          snapshot,
-          loadResult.save.startedAt,
-        ),
+      const currentReaderText = loadResult.save.readerCurrentText ?? snapshot.text;
+      const readerPassages =
+        loadResult.save.readerPassages ?? passagesFromText(currentReaderText);
+      const session = new StorySession(
+        storyPackage,
+        repository,
+        clock,
+        runtime,
         snapshot,
+        currentReaderText,
+        readerPassages,
+        loadResult.save.readerPageIndex ?? 0,
+        loadResult.save.startedAt,
+      );
+
+      return {
+        session,
+        snapshot: session.readerSnapshot(),
         resumed: true,
         recovery: null,
       };
@@ -129,11 +151,26 @@ export class StorySession {
     }
   }
 
+  async setPage(pageIndex: number): Promise<StorySessionMutationResult> {
+    if (!Number.isInteger(pageIndex) || pageIndex < 0) {
+      throw new Error('READER_PAGE_INVALID: Page index must be non-negative.');
+    }
+
+    this.readerPageIndex = pageIndex;
+    return {
+      snapshot: this.readerSnapshot(),
+      persisted: await this.persistCurrentState(),
+    };
+  }
+
   async choose(choiceIndex: number): Promise<StorySessionMutationResult> {
     this.currentSnapshot = this.runtime.choose(choiceIndex);
+    this.currentReaderText = this.currentSnapshot.text;
+    this.readerPassages.push(...passagesFromText(this.currentReaderText));
+    this.readerPageIndex = 0;
 
     return {
-      snapshot: this.currentSnapshot,
+      snapshot: this.readerSnapshot(),
       persisted: await this.persistCurrentState(),
     };
   }
@@ -150,13 +187,16 @@ export class StorySession {
     const fresh = createRuntimeAtStart(this.storyPackage);
     this.runtime = fresh.runtime;
     this.currentSnapshot = fresh.snapshot;
+    this.currentReaderText = fresh.snapshot.text;
+    this.readerPassages = passagesFromText(this.currentReaderText);
+    this.readerPageIndex = 0;
     this.startedAt = this.clock().toISOString();
 
     if (!(await this.persistCurrentState())) {
       persisted = false;
     }
 
-    return {snapshot: this.currentSnapshot, persisted};
+    return {snapshot: this.readerSnapshot(), persisted};
   }
 
   async flush(): Promise<boolean> {
@@ -170,20 +210,33 @@ export class StorySession {
     recovery: StorySessionRecovery | null,
   ): StorySessionOpenResult {
     const fresh = createRuntimeAtStart(storyPackage);
+    const readerPassages = passagesFromText(fresh.snapshot.text);
     const session = new StorySession(
       storyPackage,
       repository,
       clock,
       fresh.runtime,
       fresh.snapshot,
+      fresh.snapshot.text,
+      readerPassages,
+      0,
       clock().toISOString(),
     );
 
     return {
       session,
-      snapshot: fresh.snapshot,
+      snapshot: session.readerSnapshot(),
       resumed: false,
       recovery,
+    };
+  }
+
+  private readerSnapshot(): StoryReaderSnapshot {
+    return {
+      ...this.currentSnapshot,
+      text: this.currentReaderText,
+      passages: [...this.readerPassages],
+      pageIndex: this.readerPageIndex,
     };
   }
 
@@ -196,6 +249,9 @@ export class StorySession {
       updatedAt: this.clock().toISOString(),
       completed: this.currentSnapshot.isEnded,
       endingId: this.currentSnapshot.endingId,
+      readerCurrentText: this.currentReaderText,
+      readerPassages: [...this.readerPassages],
+      readerPageIndex: this.readerPageIndex,
     };
 
     try {
@@ -213,6 +269,13 @@ function createRuntimeAtStart(storyPackage: StoryManifestEntry): Readonly<{
 }> {
   const runtime = new InkStoryRuntime(storyPackage.compiledStory);
   return {runtime, snapshot: runtime.continueToChoiceOrEnd()};
+}
+
+function passagesFromText(text: string): string[] {
+  return text
+    .split(/\n\s*\n/g)
+    .map(passage => passage.trim())
+    .filter(passage => passage.length > 0);
 }
 
 function matchesSavedCompletion(

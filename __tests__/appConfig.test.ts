@@ -1,12 +1,12 @@
 import {APP_CONFIG} from '../src/config/appConfig';
 
 describe('application identity', () => {
-  it('keeps the stable Android identity for v0.1.4', () => {
+  it('keeps the stable Android identity for v0.1.5', () => {
     expect(APP_CONFIG).toEqual({
       applicationId: 'io.github.regstar2.textquestanthology',
       displayName: 'Text Quest Anthology',
-      versionCode: 5,
-      versionName: '0.1.4',
+      versionCode: 6,
+      versionName: '0.1.5',
     });
   });
 
