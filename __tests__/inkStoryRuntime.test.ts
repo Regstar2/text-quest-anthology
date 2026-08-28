@@ -27,9 +27,11 @@ function chooseByText(
   snapshot: InkRuntimeSnapshot,
   textStart: string,
 ): InkRuntimeSnapshot {
-  const choice = snapshot.choices.find(item => item.text.startsWith(textStart));
+  const choice = snapshot.choices.find(
+    item => item.enabled && item.text.startsWith(textStart),
+  );
   if (!choice) {
-    throw new Error(`Expected choice starting with "${textStart}".`);
+    throw new Error(`Expected enabled choice starting with "${textStart}".`);
   }
   return runtime.choose(choice.index);
 }
@@ -40,22 +42,29 @@ describe('InkStoryRuntime packaged story', () => {
 
     expect(snapshot.isEnded).toBe(false);
     expect(snapshot.choices).toHaveLength(2);
+    expect(snapshot.choices.every(choice => choice.enabled)).toBe(true);
     expect(snapshot.text).toContain('Ливень начался не сразу');
 
     let current = chooseByText(runtime, snapshot, 'Сначала обойти дом');
     current = chooseByText(runtime, current, 'Осмотреть дом тщательно');
     current = chooseByText(runtime, current, 'Укрепить вход');
 
-    expect(current.choices.map(choice => choice.text)).toEqual(
+    expect(current.choices).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('сразу подняться на подготовленный чердак'),
+        expect.objectContaining({
+          enabled: true,
+          text: expect.stringContaining('сразу подняться на подготовленный чердак'),
+        }),
       ]),
     );
 
     current = chooseByText(runtime, current, 'Не подходить к окну');
-    expect(current.choices.map(choice => choice.text)).toEqual(
+    expect(current.choices).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('Сразу заблокировать маленькое окно'),
+        expect.objectContaining({
+          enabled: true,
+          text: expect.stringContaining('Сразу заблокировать маленькое окно'),
+        }),
       ]),
     );
 
@@ -66,7 +75,7 @@ describe('InkStoryRuntime packaged story', () => {
     expect(result.text).toContain('К рассвету');
   });
 
-  test('direct-entry route cannot use unknown pipe knowledge and reaches the glass ending', () => {
+  test('direct-entry route exposes unavailable conditional choices without making them selectable', () => {
     const {runtime, snapshot} = startStory();
 
     let current = chooseByText(runtime, snapshot, 'Зайти в дом сразу');
@@ -74,16 +83,44 @@ describe('InkStoryRuntime packaged story', () => {
     current = chooseByText(runtime, current, 'Укрепить вход');
     current = chooseByText(runtime, current, 'Не подходить к окну');
 
-    expect(
-      current.choices.some(choice =>
-        choice.text.startsWith('Сразу заблокировать маленькое окно'),
-      ),
-    ).toBe(false);
+    const lockedPipeChoice = current.choices.find(choice =>
+      choice.text.startsWith('Сразу заблокировать маленькое окно'),
+    );
+
+    expect(lockedPipeChoice).toEqual(
+      expect.objectContaining({
+        enabled: false,
+        index: -1,
+        text: expect.stringContaining('к нему ведёт газовая труба'),
+      }),
+    );
+    expect(current.choices[0]).toEqual(lockedPipeChoice);
 
     const result = chooseByText(runtime, current, 'Остаться у люка');
     expect(result.isEnded).toBe(true);
     expect(result.endingId).toBe('e12_glass');
     expect(result.text).toContain('Третий удар выбивает стекло');
+  });
+
+  test('unavailable conditional choice survives Ink state restore', () => {
+    const {runtime, snapshot} = startStory();
+
+    let current = chooseByText(runtime, snapshot, 'Зайти в дом сразу');
+    current = chooseByText(runtime, current, 'Осмотреть дом тщательно');
+    current = chooseByText(runtime, current, 'Укрепить вход');
+    current = chooseByText(runtime, current, 'Не подходить к окну');
+
+    const serializedState = runtime.exportState();
+    const restoredStory = storyLoader.load(STORY_METADATA.id);
+    const restoredRuntime = new InkStoryRuntime(restoredStory.compiledStory);
+    const restored = restoredRuntime.importState(serializedState);
+
+    expect(restored.choices).toEqual(current.choices);
+    expect(
+      restored.choices.find(choice =>
+        choice.text.startsWith('Сразу заблокировать маленькое окно'),
+      ),
+    ).toEqual(expect.objectContaining({enabled: false, index: -1}));
   });
 
   test('Ink state is serializable and restores the current decision point', () => {

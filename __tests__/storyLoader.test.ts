@@ -11,7 +11,7 @@ describe('StoryLoader', () => {
       expect.objectContaining({
         id: 'zavalinka',
         schemaVersion: 1,
-        contentVersion: 4,
+        contentVersion: 5,
         title: 'Завалинка',
       }),
     );

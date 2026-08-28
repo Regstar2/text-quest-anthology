@@ -1,8 +1,6 @@
-import React, {useEffect, useState} from 'react';
-import {StyleSheet, View, useWindowDimensions} from 'react-native';
+import React, {useEffect} from 'react';
+import {NativeModules, Platform, View, useWindowDimensions} from 'react-native';
 import {
-  BannerAdSize,
-  BannerView,
   InterstitialAdLoader,
   MobileAds,
   type InterstitialAd,
@@ -16,72 +14,73 @@ import type {
 import {InterstitialFrequencyPolicy} from '../InterstitialFrequencyPolicy';
 import {ADS_CONFIG} from '../../config/adsConfig';
 
-type BannerLoadState = 'loading' | 'loaded' | 'failed';
+type NativeBannerControllerModule = Readonly<{
+  setVisible: (
+    visible: boolean,
+    adUnitId: string,
+    maxHeightDp: number,
+  ) => void;
+}>;
 
 function logAdsError(message: string, error: unknown): void {
   console.warn(`[ads:yandex] ${message}`, error);
 }
 
-function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element | null {
-  const {height, width} = useWindowDimensions();
-  const [adSize, setAdSize] = useState<BannerAdSize | null>(null);
-  const [loadState, setLoadState] = useState<BannerLoadState>('loading');
-  const bannerWidth = Math.max(1, Math.floor(width));
-  const reservedHeight = Math.max(
-    ADS_CONFIG.bannerLayout.minHeight,
-    Math.ceil(height * ADS_CONFIG.bannerLayout.heightRatio),
-  );
-
-  useEffect(() => {
-    let active = true;
-    setAdSize(null);
-    setLoadState('loading');
-
-    BannerAdSize.stickySize(bannerWidth)
-      .then(size => {
-        if (active) {
-          setAdSize(size);
-        }
-      })
-      .catch((error: unknown) => {
-        if (active) {
-          setLoadState('failed');
-          logAdsError('Failed to calculate sticky banner size.', error);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [bannerWidth]);
-
-  if (loadState === 'failed') {
+function getNativeBannerController(): NativeBannerControllerModule | null {
+  if (Platform.OS !== 'android') {
     return null;
   }
 
   return (
+    (NativeModules.NativeBannerController as
+      | NativeBannerControllerModule
+      | undefined) ?? null
+  );
+}
+
+function YandexBanner({visible}: AdsBannerProps): React.JSX.Element {
+  const {height} = useWindowDimensions();
+  const reservedHeight = Math.min(
+    ADS_CONFIG.bannerLayout.maxHeight,
+    Math.max(
+      ADS_CONFIG.bannerLayout.minHeight,
+      Math.ceil(height * ADS_CONFIG.bannerLayout.heightRatio),
+    ),
+  );
+  const nativeBannerController = getNativeBannerController();
+  const canShowNativeBanner = nativeBannerController !== null;
+
+  useEffect(() => {
+    if (!nativeBannerController) {
+      return;
+    }
+
+    nativeBannerController.setVisible(
+      visible,
+      ADS_CONFIG.adUnits.banner,
+      reservedHeight,
+    );
+
+    return () => {
+      nativeBannerController.setVisible(
+        false,
+        ADS_CONFIG.adUnits.banner,
+        reservedHeight,
+      );
+    };
+  }, [nativeBannerController, reservedHeight, visible]);
+
+  return (
     <View
-      accessibilityLabel="Реклама"
-      style={[
-        styles.bannerSlot,
-        {minHeight: reservedHeight},
-        loadState === 'loaded' && styles.bannerSlotLoaded,
-        loadState === 'loaded' && isDarkMode && styles.bannerSlotLoadedDark,
-      ]}>
-      {adSize ? (
-        <BannerView
-          adRequest={{adUnitId: ADS_CONFIG.adUnits.banner}}
-          onAdFailedToLoad={error => {
-            setLoadState('failed');
-            logAdsError('Banner failed to load.', error);
-          }}
-          onAdLoaded={() => {
-            setLoadState('loaded');
-          }}
-          size={adSize}
-        />
-      ) : null}
-    </View>
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      pointerEvents="none"
+      style={{
+        flexShrink: 0,
+        height: visible && canShowNativeBanner ? reservedHeight : 0,
+        width: '100%',
+      }}
+    />
   );
 }
 
@@ -143,14 +142,11 @@ export class YandexAdsProvider implements AdsProvider {
   async showInterstitial(
     placement: InterstitialPlacement,
   ): Promise<AdShowResult> {
-    if (
-      placement !== 'story-ending-restart' ||
-      this.isShowingInterstitial
-    ) {
+    if (placement !== 'story-restart' || this.isShowingInterstitial) {
       return 'unavailable';
     }
 
-    if (!this.interstitialFrequency.registerEnding()) {
+    if (!this.interstitialFrequency.registerRestart()) {
       return 'unavailable';
     }
 
@@ -176,10 +172,6 @@ export class YandexAdsProvider implements AdsProvider {
 
         settled = true;
         this.isShowingInterstitial = false;
-
-        if (result === 'success') {
-          this.interstitialFrequency.markShown();
-        }
 
         this.preloadInterstitial().catch((error: unknown) => {
           logAdsError('Interstitial preload request failed.', error);
@@ -219,18 +211,3 @@ export class YandexAdsProvider implements AdsProvider {
 }
 
 export const yandexAdsProvider = new YandexAdsProvider();
-
-const styles = StyleSheet.create({
-  bannerSlot: {
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-    width: '100%',
-  },
-  bannerSlotLoaded: {
-    backgroundColor: '#f3f4f6',
-  },
-  bannerSlotLoadedDark: {
-    backgroundColor: '#1f2937',
-  },
-});

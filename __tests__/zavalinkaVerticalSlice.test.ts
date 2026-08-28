@@ -24,9 +24,11 @@ class MemoryStorySaveStorage implements StorySaveStorage {
 const STORY_PACKAGE = storyLoader.load('zavalinka');
 
 function findChoice(snapshot: StoryReaderSnapshot, textStart: string): number {
-  const choice = snapshot.choices.find(item => item.text.startsWith(textStart));
+  const choice = snapshot.choices.find(
+    item => item.enabled && item.text.startsWith(textStart),
+  );
   if (!choice) {
-    throw new Error(`Expected choice starting with "${textStart}".`);
+    throw new Error(`Expected enabled choice starting with "${textStart}".`);
   }
   return choice.index;
 }
@@ -68,8 +70,9 @@ describe('Завалинка vertical slice known routes', () => {
     );
 
     expect(
-      current.snapshot.choices.some(choice =>
-        choice.text.startsWith('Не подходить к окну'),
+      current.snapshot.choices.some(
+        choice =>
+          choice.enabled && choice.text.startsWith('Не подходить к окну'),
       ),
     ).toBe(true);
 
@@ -95,8 +98,10 @@ describe('Завалинка vertical slice known routes', () => {
     );
     expect(resumedBeforeConsequence.resumed).toBe(true);
     expect(
-      resumedBeforeConsequence.snapshot.choices.some(choice =>
-        choice.text.startsWith('Сразу заблокировать маленькое окно'),
+      resumedBeforeConsequence.snapshot.choices.some(
+        choice =>
+          choice.enabled &&
+          choice.text.startsWith('Сразу заблокировать маленькое окно'),
       ),
     ).toBe(true);
 
@@ -120,7 +125,7 @@ describe('Завалинка vertical slice known routes', () => {
     ).toBe(true);
   });
 
-  test('route B keeps PIPE_KNOWN false, hides the delayed pipe action and reaches e12_glass', async () => {
+  test('route B keeps PIPE_KNOWN false, shows the delayed pipe action as disabled and reaches e12_glass', async () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
     const opened = await StorySession.open(STORY_PACKAGE, repository);
 
@@ -144,10 +149,15 @@ describe('Завалинка vertical slice known routes', () => {
     }
     expect(readBooleanFlag(saved.save.runtimeState, 'PIPE_KNOWN')).toBe(false);
     expect(
-      current.snapshot.choices.some(choice =>
+      current.snapshot.choices.find(choice =>
         choice.text.startsWith('Сразу заблокировать маленькое окно'),
       ),
-    ).toBe(false);
+    ).toEqual(
+      expect.objectContaining({
+        enabled: false,
+        index: -1,
+      }),
+    );
 
     const completed = await opened.session.choose(
       findChoice(current.snapshot, 'Остаться у люка'),

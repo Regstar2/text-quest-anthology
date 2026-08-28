@@ -8,9 +8,9 @@ describe('ads boundary', () => {
 
     await expect(provider.initialize()).resolves.toBeUndefined();
     await expect(provider.preloadInterstitial()).resolves.toBeUndefined();
-    await expect(
-      provider.showInterstitial('story-ending-restart'),
-    ).resolves.toBe('unavailable');
+    await expect(provider.showInterstitial('story-restart')).resolves.toBe(
+      'unavailable',
+    );
   });
 
   it('uses only official Yandex demo ad units in the prototype', () => {
@@ -20,47 +20,31 @@ describe('ads boundary', () => {
     });
   });
 
-  it('keeps the banner compact while preserving a minimum slot height', () => {
+  it('gives the periodic inline banner enough vertical room without letting it dominate the reader', () => {
     expect(ADS_CONFIG.bannerLayout).toEqual({
-      heightRatio: 0.08,
-      minHeight: 50,
+      heightRatio: 0.14,
+      minHeight: 96,
+      maxHeight: 120,
     });
   });
 
-  it('allows an interstitial only after three completed endings', () => {
-    const policy = new InterstitialFrequencyPolicy(
-      ADS_CONFIG.interstitialFrequency,
-    );
-
-    expect(policy.registerEnding(0)).toBe(false);
-    expect(policy.registerEnding(1)).toBe(false);
-    expect(policy.registerEnding(2)).toBe(true);
+  it('shows the reader banner only on every third page or feed choice', () => {
+    expect(ADS_CONFIG.bannerFrequency).toEqual({
+      pagesPerBanner: 3,
+      feedChoicesPerBanner: 3,
+    });
   });
 
-  it('keeps the ten-minute cooldown after a shown interstitial', () => {
+  it('allows an interstitial on exactly every third restart attempt', () => {
     const policy = new InterstitialFrequencyPolicy(
       ADS_CONFIG.interstitialFrequency,
     );
 
-    policy.registerEnding(0);
-    policy.registerEnding(1);
-    expect(policy.registerEnding(2)).toBe(true);
-    policy.markShown(2);
-
-    policy.registerEnding(3);
-    policy.registerEnding(4);
-    expect(policy.registerEnding(5)).toBe(false);
-    expect(policy.registerEnding(2 + 10 * 60 * 1000)).toBe(true);
-  });
-
-  it('does not consume the frequency threshold when an ad is unavailable', () => {
-    const policy = new InterstitialFrequencyPolicy(
-      ADS_CONFIG.interstitialFrequency,
-    );
-
-    policy.registerEnding(0);
-    policy.registerEnding(1);
-    expect(policy.registerEnding(2)).toBe(true);
-    expect(policy.registerEnding(3)).toBe(true);
+    expect(policy.registerRestart()).toBe(false);
+    expect(policy.registerRestart()).toBe(false);
+    expect(policy.registerRestart()).toBe(true);
+    expect(policy.registerRestart()).toBe(false);
+    expect(policy.registerRestart()).toBe(false);
+    expect(policy.registerRestart()).toBe(true);
   });
 });

@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import {adsProvider} from '../ads';
+import {ADS_CONFIG} from '../config/adsConfig';
 import {APP_CONFIG} from '../config/appConfig';
 import {UI_STRINGS} from '../config/uiStrings';
 import {
@@ -24,9 +25,14 @@ import {
   type StorySessionRecovery,
 } from '../narrative/StorySession';
 import {storyLoader} from '../narrative/StoryLoader';
+import type {StoryMetadata} from '../narrative/StoryMetadata';
 import {storySaveRepository} from '../persistence/NativeStorySaveStorage';
+import {
+  loadStoryCatalog,
+  type StoryCatalogAction,
+  type StoryCatalogItem,
+} from './StoryCatalog';
 
-const DEFAULT_STORY = storyLoader.listMetadata()[0];
 const AdsBanner = adsProvider.Banner;
 const STORY_LINE_HEIGHT = 28;
 const PAGE_GAP = 12;
@@ -40,7 +46,7 @@ const PARAGRAPH_BREAK_MARKER = '\uE000';
 const ZERO_WIDTH_SPACE = '\u200B';
 const EMPTY_LINES: readonly string[] = [];
 
-type AppScreen = 'start' | 'reader' | 'ending';
+type AppScreen = 'main' | 'catalog' | 'reader' | 'ending';
 type ReaderMode = 'pages' | 'feed';
 type MenuView = 'menu' | 'restart' | null;
 
@@ -49,11 +55,6 @@ type ReaderMeasurement = Readonly<{
   lines: readonly string[];
 }>;
 
-if (!DEFAULT_STORY) {
-  throw new Error('STORY_NOT_FOUND: Generated story manifest is empty.');
-}
-
-const DEFAULT_STORY_PACKAGE = storyLoader.load(DEFAULT_STORY.id);
 const EMPTY_MEASUREMENT: ReaderMeasurement = {key: '', lines: EMPTY_LINES};
 
 export function App(): React.JSX.Element {
@@ -62,24 +63,40 @@ export function App(): React.JSX.Element {
   const mutationLockRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
   const measurementKeyRef = useRef('');
+  const pageOrdinalRef = useRef(1);
+  const feedChoiceCountRef = useRef(0);
 
-  const [screen, setScreen] = useState<AppScreen>('start');
+  const storyMetadata = useMemo(() => storyLoader.listMetadata(), []);
+
+  const [screen, setScreen] = useState<AppScreen>('main');
+  const [activeStory, setActiveStory] = useState<StoryMetadata | null>(null);
+  const [catalogItems, setCatalogItems] = useState<readonly StoryCatalogItem[]>([]);
   const [readerMode, setReaderMode] = useState<ReaderMode>('pages');
   const [menuView, setMenuView] = useState<MenuView>(null);
   const [snapshot, setSnapshot] = useState<StoryReaderSnapshot | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [hasStartedSession, setHasStartedSession] = useState(false);
   const [pageHeight, setPageHeight] = useState(0);
   const [readerRevision, setReaderRevision] = useState(0);
+  const [pageBannerVisible, setPageBannerVisible] = useState(false);
+  const [feedBannerVisible, setFeedBannerVisible] = useState(false);
   const [measurement, setMeasurement] =
     useState<ReaderMeasurement>(EMPTY_MEASUREMENT);
+
+  const resetReaderAdCadence = (): void => {
+    pageOrdinalRef.current = 1;
+    feedChoiceCountRef.current = 0;
+    setPageBannerVisible(false);
+    setFeedBannerVisible(false);
+  };
 
   const beginMutation = (): boolean => {
     if (mutationLockRef.current) {
       return false;
     }
+
     mutationLockRef.current = true;
     setIsMutating(true);
     return true;
@@ -90,57 +107,85 @@ export function App(): React.JSX.Element {
     setIsMutating(false);
   };
 
-  const exitStory = useCallback(() => {
+  const refreshCatalog = useCallback(async (): Promise<void> => {
+    const catalog = await loadStoryCatalog(storyLoader, storySaveRepository);
+    setCatalogItems(catalog.items);
+
+    if (catalog.storageUnavailable) {
+      setNotice(UI_STRINGS.storageUnavailable);
+    }
+  }, []);
+
+  const showMain = useCallback(() => {
     if (mutationLockRef.current) {
       return;
     }
 
     setMenuView(null);
-    setScreen('start');
+    setNotice(null);
+    setScreen('main');
+  }, []);
 
-    const session = sessionRef.current;
-    if (!session || !hasStartedSessionRef.current) {
+  const showCatalog = useCallback(() => {
+    if (mutationLockRef.current) {
       return;
     }
 
-    session.flush().then(persisted => {
-      if (!persisted) {
-        setNotice(UI_STRINGS.saveFailed);
+    setMenuView(null);
+    setNotice(null);
+    setScreen('catalog');
+    setIsLoading(true);
+
+    refreshCatalog()
+      .catch(() => {
+        setNotice(UI_STRINGS.storageUnavailable);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [refreshCatalog]);
+
+  const exitStory = useCallback(() => {
+    if (mutationLockRef.current) {
+      return;
+    }
+
+    const session = sessionRef.current;
+    const shouldFlush = hasStartedSessionRef.current;
+
+    sessionRef.current = null;
+    hasStartedSessionRef.current = false;
+    pageOrdinalRef.current = 1;
+    feedChoiceCountRef.current = 0;
+    setPageBannerVisible(false);
+    setFeedBannerVisible(false);
+    setHasStartedSession(false);
+    setActiveStory(null);
+    setSnapshot(null);
+    setMeasurement(EMPTY_MEASUREMENT);
+    setMenuView(null);
+    setScreen('catalog');
+
+    const finishExit = async () => {
+      if (session && shouldFlush) {
+        const persisted = await session.flush();
+        if (!persisted) {
+          setNotice(UI_STRINGS.saveFailed);
+        }
       }
-    });
-  }, []);
+
+      try {
+        await refreshCatalog();
+      } catch {
+        setNotice(UI_STRINGS.storageUnavailable);
+      }
+    };
+
+    void finishExit();
+  }, [refreshCatalog]);
 
   useEffect(() => {
     adsProvider.initialize();
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-
-    StorySession.open(DEFAULT_STORY_PACKAGE, storySaveRepository)
-      .then(result => {
-        if (!active) {
-          return;
-        }
-        sessionRef.current = result.session;
-        hasStartedSessionRef.current = result.resumed;
-        setSnapshot(result.snapshot);
-        setHasStartedSession(result.resumed);
-        setNotice(recoveryMessage(result.recovery));
-        setIsLoading(false);
-      })
-      .catch(() => {
-        if (!active) {
-          return;
-        }
-        setNotice(UI_STRINGS.startupFailed);
-        setIsLoading(false);
-      });
-
-    return () => {
-      active = false;
-      sessionRef.current = null;
-    };
   }, []);
 
   useEffect(() => {
@@ -177,38 +222,67 @@ export function App(): React.JSX.Element {
           setMenuView(null);
           return true;
         }
-        if (screen === 'start') {
-          return false;
-        }
         if (mutationLockRef.current) {
           return true;
         }
+        if (screen === 'main') {
+          return false;
+        }
+        if (screen === 'catalog') {
+          showMain();
+          return true;
+        }
+
         exitStory();
         return true;
       },
     );
 
     return () => subscription.remove();
-  }, [exitStory, menuView, screen]);
+  }, [exitStory, menuView, screen, showMain]);
 
-  const enterStory = async () => {
-    const session = sessionRef.current;
-    if (!session || !snapshot || isLoading || !beginMutation()) {
+  const openStory = async (storyId: string) => {
+    if (isLoading || !beginMutation()) {
       return;
     }
 
+    setIsLoading(true);
+
     try {
-      if (!hasStartedSessionRef.current) {
-        const persisted = await session.flush();
+      const storyPackage = storyLoader.load(storyId);
+      const opened = await StorySession.open(storyPackage, storySaveRepository);
+
+      sessionRef.current = opened.session;
+      hasStartedSessionRef.current = opened.resumed;
+      resetReaderAdCadence();
+      setHasStartedSession(opened.resumed);
+      setActiveStory(storyPackage.metadata);
+      setSnapshot(opened.snapshot);
+      setNotice(recoveryMessage(opened.recovery));
+      setReaderRevision(previous => previous + 1);
+      setMeasurement(EMPTY_MEASUREMENT);
+
+      if (!opened.resumed) {
+        const persisted = await opened.session.flush();
         hasStartedSessionRef.current = true;
         setHasStartedSession(true);
-        setNotice(persisted ? null : UI_STRINGS.saveFailed);
+        if (!persisted) {
+          setNotice(UI_STRINGS.saveFailed);
+        }
       }
-      setReaderRevision(previous => previous + 1);
-      setScreen(snapshot.isEnded ? 'ending' : 'reader');
+
+      setScreen(opened.snapshot.isEnded ? 'ending' : 'reader');
     } catch {
-      setNotice(UI_STRINGS.storyActionFailed);
+      sessionRef.current = null;
+      hasStartedSessionRef.current = false;
+      resetReaderAdCadence();
+      setHasStartedSession(false);
+      setActiveStory(null);
+      setSnapshot(null);
+      setNotice(UI_STRINGS.startupFailed);
+      setScreen('catalog');
     } finally {
+      setIsLoading(false);
       endMutation();
     }
   };
@@ -219,10 +293,22 @@ export function App(): React.JSX.Element {
       return;
     }
 
+    const previousPageIndex = snapshot?.pageIndex ?? 0;
+
     try {
       const result = await session.setPage(pageIndex);
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
+
+      if (readerMode === 'pages') {
+        pageOrdinalRef.current = Math.max(
+          1,
+          pageOrdinalRef.current + pageIndex - previousPageIndex,
+        );
+        setPageBannerVisible(
+          pageOrdinalRef.current % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0,
+        );
+      }
     } catch {
       setNotice(UI_STRINGS.storyActionFailed);
     } finally {
@@ -243,6 +329,20 @@ export function App(): React.JSX.Element {
       setReaderRevision(previous => previous + 1);
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
+
+      if (readerMode === 'pages') {
+        pageOrdinalRef.current += 1;
+        setPageBannerVisible(
+          pageOrdinalRef.current % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0,
+        );
+      } else {
+        const nextChoiceCount = feedChoiceCountRef.current + 1;
+        feedChoiceCountRef.current = nextChoiceCount;
+        setFeedBannerVisible(
+          nextChoiceCount % ADS_CONFIG.bannerFrequency.feedChoicesPerBanner === 0,
+        );
+      }
+
       setScreen(result.snapshot.isEnded ? 'ending' : 'reader');
     } catch {
       setNotice(UI_STRINGS.storyActionFailed);
@@ -251,28 +351,27 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const restart = async (showEndingAd: boolean) => {
+  const restart = async () => {
     const session = sessionRef.current;
     if (!session || !beginMutation()) {
       return;
     }
 
     try {
-      if (showEndingAd) {
-        try {
-          await adsProvider.showInterstitial('story-ending-restart');
-        } catch {
-          // Advertising is optional and must never block narrative reset.
-        }
-      }
-
       const result = await session.restart();
       hasStartedSessionRef.current = true;
+      resetReaderAdCadence();
       setHasStartedSession(true);
       setReaderRevision(previous => previous + 1);
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
       setScreen('reader');
+
+      try {
+        await adsProvider.showInterstitial('story-restart');
+      } catch {
+        // Advertising is optional and must never block narrative reset.
+      }
     } catch {
       setNotice(UI_STRINGS.storyActionFailed);
     } finally {
@@ -281,7 +380,8 @@ export function App(): React.JSX.Element {
   };
 
   const canRestart =
-    hasStartedSession || screen === 'ending' || snapshot?.isEnded === true;
+    activeStory !== null &&
+    (hasStartedSession || screen === 'ending' || snapshot?.isEnded === true);
 
   const requestRestart = () => {
     if (!canRestart || mutationLockRef.current) {
@@ -291,29 +391,25 @@ export function App(): React.JSX.Element {
   };
 
   const confirmRestart = () => {
-    const showEndingAd = screen === 'ending' && snapshot?.isEnded === true;
     setMenuView(null);
-    restart(showEndingAd);
+    void restart();
   };
 
   const changeReaderMode = (mode: ReaderMode) => {
     if (mode === 'pages' && readerMode !== 'pages') {
+      pageOrdinalRef.current = 1;
+      setPageBannerVisible(false);
       setReaderRevision(previous => previous + 1);
+    }
+    if (mode === 'feed' && readerMode !== 'feed') {
+      feedChoiceCountRef.current = 0;
+      setFeedBannerVisible(false);
     }
     setReaderMode(mode);
     setMenuView(null);
   };
 
   const isBusy = isLoading || isMutating;
-  let startActionLabel: string = UI_STRINGS.startStory;
-
-  if (hasStartedSession) {
-    startActionLabel = UI_STRINGS.continueStory;
-  }
-  if (snapshot?.isEnded) {
-    startActionLabel = UI_STRINGS.viewEnding;
-  }
-
   const currentParagraphs = useMemo(
     () => splitParagraphs(snapshot?.text ?? ''),
     [snapshot?.text],
@@ -356,6 +452,9 @@ export function App(): React.JSX.Element {
         : currentParagraphs.map(indentParagraph),
     [currentParagraphs, effectivePageIndex, measurementReady, pages],
   );
+  const showReaderBanner =
+    screen === 'reader' &&
+    (readerMode === 'pages' ? pageBannerVisible : feedBannerVisible);
 
   const recordMeasuredLines = (
     callbackKey: string,
@@ -385,26 +484,40 @@ export function App(): React.JSX.Element {
 
     return (
       <View accessibilityLabel={UI_STRINGS.choicesLabel} style={styles.choicesZone}>
-        {snapshot.choices.map(choice => (
-          <Pressable
-            accessibilityLabel={choice.text}
-            accessibilityRole="button"
-            disabled={isBusy || !enabled}
-            key={choice.index}
-            onPress={() => {
-              choose(choice.index);
-            }}
-            style={({pressed}) => [
-              styles.choice,
-              isDarkMode && styles.choiceDark,
-              pressed && styles.buttonPressed,
-              (isBusy || !enabled) && styles.disabled,
-            ]}>
-            <Text style={[styles.choiceText, isDarkMode && styles.textDark]}>
-              {choice.text}
-            </Text>
-          </Pressable>
-        ))}
+        {snapshot.choices.map(choice => {
+          const choiceEnabled = enabled && choice.enabled;
+
+          return (
+            <Pressable
+              accessibilityLabel={choice.text}
+              accessibilityRole="button"
+              accessibilityState={{disabled: isBusy || !choiceEnabled}}
+              disabled={isBusy || !choiceEnabled}
+              key={`${choice.index}:${choice.text}`}
+              onPress={() => {
+                if (choice.enabled) {
+                  void choose(choice.index);
+                }
+              }}
+              style={({pressed}) => [
+                styles.choice,
+                isDarkMode && styles.choiceDark,
+                !choice.enabled && styles.choiceUnavailable,
+                isDarkMode && !choice.enabled && styles.choiceUnavailableDark,
+                pressed && choiceEnabled && styles.buttonPressed,
+                (isBusy || !enabled) && styles.disabled,
+              ]}>
+              <Text
+                style={[
+                  styles.choiceText,
+                  isDarkMode && styles.textDark,
+                  !choice.enabled && styles.choiceTextUnavailable,
+                ]}>
+                {choice.text}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
     );
   };
@@ -428,7 +541,7 @@ export function App(): React.JSX.Element {
   const renderHeader = () => (
     <View style={[styles.readerHeader, isDarkMode && styles.headerDark]}>
       <Text style={[styles.readerTitle, isDarkMode && styles.textDark]}>
-        {DEFAULT_STORY.title}
+        {activeStory?.title ?? UI_STRINGS.appTitle}
       </Text>
       {renderMenuButton()}
     </View>
@@ -537,23 +650,19 @@ export function App(): React.JSX.Element {
                 </View>
               </View>
 
-              {screen !== 'start' ? (
-                <>
-                  <View style={styles.menuDivider} />
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={exitStory}
-                    style={({pressed}) => [
-                      styles.menuRow,
-                      pressed && styles.menuRowPressed,
-                    ]}>
-                    <Text style={[styles.menuRowIcon, isDarkMode && styles.textDark]}>⌂</Text>
-                    <Text style={[styles.menuRowText, isDarkMode && styles.textDark]}>
-                      {UI_STRINGS.returnToStart}
-                    </Text>
-                  </Pressable>
-                </>
-              ) : null}
+              <View style={styles.menuDivider} />
+              <Pressable
+                accessibilityRole="button"
+                onPress={exitStory}
+                style={({pressed}) => [
+                  styles.menuRow,
+                  pressed && styles.menuRowPressed,
+                ]}>
+                <Text style={[styles.menuRowIcon, isDarkMode && styles.textDark]}>←</Text>
+                <Text style={[styles.menuRowText, isDarkMode && styles.textDark]}>
+                  {UI_STRINGS.returnToCatalog}
+                </Text>
+              </Pressable>
 
               {canRestart ? (
                 <Pressable
@@ -591,39 +700,103 @@ export function App(): React.JSX.Element {
     <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
       <SafeAreaView style={[styles.safeArea, isDarkMode && styles.safeAreaDark]}>
-        <AdsBanner isDarkMode={isDarkMode} />
+        <AdsBanner isDarkMode={isDarkMode} visible={showReaderBanner} />
 
-        {screen === 'start' ? (
+        {screen === 'main' ? (
           <View style={styles.screen}>
-            <View style={styles.startHeader}>{renderMenuButton()}</View>
             <View style={styles.startContent}>
               <Text style={[styles.title, isDarkMode && styles.textDark]}>
-                {DEFAULT_STORY.title}
+                {UI_STRINGS.appTitle}
               </Text>
               <Text style={[styles.status, isDarkMode && styles.textMutedDark]}>
                 {UI_STRINGS.prototypeStatus} · v{APP_CONFIG.versionName}
               </Text>
               <Text style={[styles.description, isDarkMode && styles.textMutedDark]}>
-                {DEFAULT_STORY.description}
+                {UI_STRINGS.anthologyDescription}
               </Text>
+              <View style={styles.startActions}>
+                <Pressable
+                  accessibilityLabel={UI_STRINGS.stories}
+                  accessibilityRole="button"
+                  onPress={showCatalog}
+                  style={({pressed}) => [
+                    styles.primaryButton,
+                    isDarkMode && styles.primaryButtonDark,
+                    pressed && styles.buttonPressed,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.primaryButtonText,
+                      isDarkMode && styles.primaryButtonTextDark,
+                    ]}>
+                    {UI_STRINGS.stories}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        ) : null}
 
+        {screen === 'catalog' ? (
+          <View style={styles.screen}>
+            <View style={[styles.readerHeader, isDarkMode && styles.headerDark]}>
+              <Pressable
+                accessibilityLabel={UI_STRINGS.returnToMain}
+                accessibilityRole="button"
+                disabled={isBusy}
+                onPress={showMain}
+                style={({pressed}) => [
+                  styles.catalogBackButton,
+                  pressed && styles.buttonPressed,
+                  isBusy && styles.disabled,
+                ]}>
+                <Text style={[styles.catalogBackText, isDarkMode && styles.textDark]}>←</Text>
+              </Pressable>
+              <Text style={[styles.catalogHeaderTitle, isDarkMode && styles.textDark]}>
+                {UI_STRINGS.stories}
+              </Text>
+              <View style={styles.catalogHeaderSpacer} />
+            </View>
+
+            <ScrollView
+              contentContainerStyle={styles.catalogList}
+              style={styles.readerScroll}>
               {notice ? (
                 <Text style={[styles.notice, isDarkMode && styles.noticeDark]}>{notice}</Text>
               ) : null}
               {isLoading ? (
                 <Text style={[styles.loading, isDarkMode && styles.textDark]}>
-                  {UI_STRINGS.loadingStory}
+                  {UI_STRINGS.loadingCatalog}
                 </Text>
               ) : null}
-              {snapshot ? (
-                <View style={styles.startActions}>
+              {!isLoading && storyMetadata.length === 0 ? (
+                <Text style={[styles.description, isDarkMode && styles.textMutedDark]}>
+                  {UI_STRINGS.catalogEmpty}
+                </Text>
+              ) : null}
+              {catalogItems.map(item => (
+                <View
+                  key={item.metadata.id}
+                  style={[styles.catalogCard, isDarkMode && styles.catalogCardDark]}>
+                  <Text style={[styles.catalogCardTitle, isDarkMode && styles.textDark]}>
+                    {item.metadata.title}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.catalogCardDescription,
+                      isDarkMode && styles.textMutedDark,
+                    ]}>
+                    {item.metadata.description}
+                  </Text>
                   <Pressable
-                    accessibilityLabel={startActionLabel}
+                    accessibilityLabel={catalogActionLabel(item.action)}
                     accessibilityRole="button"
                     disabled={isBusy}
-                    onPress={enterStory}
+                    onPress={() => {
+                      void openStory(item.metadata.id);
+                    }}
                     style={({pressed}) => [
-                      styles.primaryButton,
+                      styles.catalogAction,
                       isDarkMode && styles.primaryButtonDark,
                       pressed && styles.buttonPressed,
                       isBusy && styles.disabled,
@@ -633,16 +806,16 @@ export function App(): React.JSX.Element {
                         styles.primaryButtonText,
                         isDarkMode && styles.primaryButtonTextDark,
                       ]}>
-                      {startActionLabel}
+                      {catalogActionLabel(item.action)}
                     </Text>
                   </Pressable>
                 </View>
-              ) : null}
-            </View>
+              ))}
+            </ScrollView>
           </View>
         ) : null}
 
-        {screen === 'reader' && snapshot ? (
+        {screen === 'reader' && snapshot && activeStory ? (
           <View style={styles.screen}>
             {renderHeader()}
             {notice ? (
@@ -699,7 +872,7 @@ export function App(): React.JSX.Element {
                     accessibilityRole="button"
                     disabled={isBusy || !measurementReady || effectivePageIndex === 0}
                     onPress={() => {
-                      moveToPage(effectivePageIndex - 1);
+                      void moveToPage(effectivePageIndex - 1);
                     }}
                     style={({pressed}) => [
                       styles.pageNavButton,
@@ -726,7 +899,7 @@ export function App(): React.JSX.Element {
                       effectivePageIndex >= pages.length - 1
                     }
                     onPress={() => {
-                      moveToPage(effectivePageIndex + 1);
+                      void moveToPage(effectivePageIndex + 1);
                     }}
                     style={({pressed}) => [
                       styles.pageNavButton,
@@ -762,10 +935,10 @@ export function App(): React.JSX.Element {
           </View>
         ) : null}
 
-        {screen === 'ending' && snapshot ? (
+        {screen === 'ending' && snapshot && activeStory ? (
           <View style={styles.screen}>
             {renderHeader()}
-            <View style={styles.endingContent}>
+            <ScrollView contentContainerStyle={styles.endingContent}>
               <View style={styles.endingBody}>
                 <Text style={[styles.endingId, isDarkMode && styles.textDark]}>
                   {snapshot.endingId ?? 'unknown'}
@@ -790,7 +963,9 @@ export function App(): React.JSX.Element {
                   accessibilityLabel={UI_STRINGS.endingRestart}
                   accessibilityRole="button"
                   disabled={isBusy}
-                  onPress={() => restart(true)}
+                  onPress={() => {
+                    void restart();
+                  }}
                   style={({pressed}) => [
                     styles.endingPrimaryAction,
                     isDarkMode && styles.primaryButtonDark,
@@ -822,7 +997,7 @@ export function App(): React.JSX.Element {
                   </Text>
                 </Pressable>
               </View>
-            </View>
+            </ScrollView>
           </View>
         ) : null}
 
@@ -830,6 +1005,17 @@ export function App(): React.JSX.Element {
       </SafeAreaView>
     </SafeAreaProvider>
   );
+}
+
+function catalogActionLabel(action: StoryCatalogAction): string {
+  switch (action) {
+    case 'start':
+      return UI_STRINGS.catalogStart;
+    case 'continue':
+      return UI_STRINGS.continueStory;
+    case 'ending':
+      return UI_STRINGS.viewEnding;
+  }
 }
 
 function splitParagraphs(text: string): string[] {
@@ -987,12 +1173,6 @@ const styles = StyleSheet.create({
   safeArea: {flex: 1, backgroundColor: '#ffffff'},
   safeAreaDark: {backgroundColor: '#111111'},
   screen: {flex: 1},
-  startHeader: {
-    minHeight: 48,
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    paddingRight: 8,
-  },
   startContent: {
     flex: 1,
     justifyContent: 'center',
@@ -1052,6 +1232,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   menuButtonText: {fontSize: 28, lineHeight: 30, color: '#222222'},
+  catalogBackButton: {
+    width: 48,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -12,
+  },
+  catalogBackText: {fontSize: 25, lineHeight: 30, color: '#222222'},
+  catalogHeaderTitle: {
+    flex: 1,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '700',
+    color: '#222222',
+    textAlign: 'center',
+  },
+  catalogHeaderSpacer: {width: 36},
+  catalogList: {paddingHorizontal: 20, paddingTop: 18, paddingBottom: 28, gap: 14},
+  catalogCard: {
+    gap: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#d8d8d8',
+    padding: 16,
+    backgroundColor: '#ffffff',
+  },
+  catalogCardDark: {borderColor: '#3d3d3d', backgroundColor: '#171717'},
+  catalogCardTitle: {fontSize: 20, lineHeight: 26, fontWeight: '700', color: '#171717'},
+  catalogCardDescription: {fontSize: 15, lineHeight: 21, color: '#666666'},
+  catalogAction: {
+    minHeight: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 11,
+    paddingHorizontal: 14,
+    backgroundColor: '#111111',
+  },
   readerNotice: {
     marginHorizontal: 20,
     marginTop: 8,
@@ -1144,12 +1361,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   choiceDark: {borderColor: '#444444', backgroundColor: '#171717'},
+  choiceUnavailable: {
+    borderColor: '#b8b8b8',
+    borderStyle: 'dashed',
+    opacity: 0.62,
+  },
+  choiceUnavailableDark: {
+    borderColor: '#5a5a5a',
+    backgroundColor: '#141414',
+  },
   choiceText: {fontSize: 16, lineHeight: 22, color: '#222222'},
+  choiceTextUnavailable: {fontStyle: 'italic'},
   endingContent: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 12,
-    paddingBottom: 12,
+    paddingBottom: 18,
   },
   endingBody: {flex: 1, justifyContent: 'center', gap: 8},
   endingActions: {flexDirection: 'row', gap: 10, paddingTop: 12},
