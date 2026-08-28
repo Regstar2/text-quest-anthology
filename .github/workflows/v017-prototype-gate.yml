@@ -1,0 +1,71 @@
+name: v0.1.7 prototype gate
+
+on:
+  push:
+    branches:
+      - feature/v0.1.7-prototype-gate
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: ${{ !contains(github.event.head_commit.message, '[gate-pass]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Synchronize lockfile metadata
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify story packages, TypeScript, lint and tests
+        run: npm run verify
+
+      - name: Build Android debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Record automated gate evidence
+        shell: bash
+        run: |
+          mkdir -p docs/testing
+          cat > docs/testing/v0.1.7-automated-gate.md <<EOF
+          # v0.1.7 automated prototype gate
+
+          Automated checks executed successfully on GitHub Actions for commit \`${GITHUB_SHA}\`.
+
+          - \`npm install --package-lock-only --ignore-scripts\` — PASS
+          - \`npm ci\` — PASS
+          - \`npm run verify\` — PASS
+          - \`cd android && ./gradlew assembleDebug --no-daemon\` — PASS
+
+          Workflow run: \`${GITHUB_RUN_ID}\`.
+
+          This evidence covers reproducible dependency installation, story compilation/validation, TypeScript, lint, unit/runtime tests and Android debug assembly. Device installation, Android lifecycle checks, offline ad behavior and the rapid page/choice visual hitch remain manual checks and are not claimed by this file.
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json docs/testing/v0.1.7-automated-gate.md
+          git commit -m "chore: record v0.1.7 automated gate [gate-pass]"
+          git push
