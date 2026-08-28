@@ -16,16 +16,20 @@ import type {
 import {InterstitialFrequencyPolicy} from '../InterstitialFrequencyPolicy';
 import {ADS_CONFIG} from '../../config/adsConfig';
 
-type BannerLoadState = 'loading' | 'loaded' | 'failed';
+type BannerLoadState = 'idle' | 'loading' | 'loaded' | 'failed';
 
 function logAdsError(message: string, error: unknown): void {
   console.warn(`[ads:yandex] ${message}`, error);
 }
 
-function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element | null {
+function YandexBanner({
+  isDarkMode,
+  visible,
+}: AdsBannerProps): React.JSX.Element {
   const {height, width} = useWindowDimensions();
   const [adSize, setAdSize] = useState<BannerAdSize | null>(null);
-  const [loadState, setLoadState] = useState<BannerLoadState>('loading');
+  const [loadState, setLoadState] = useState<BannerLoadState>('idle');
+  const [hasActivated, setHasActivated] = useState(false);
   const bannerWidth = Math.max(1, Math.floor(width));
   const reservedHeight = Math.max(
     ADS_CONFIG.bannerLayout.minHeight,
@@ -33,8 +37,17 @@ function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element | null {
   );
 
   useEffect(() => {
+    if (visible) {
+      setHasActivated(true);
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!hasActivated) {
+      return;
+    }
+
     let active = true;
-    setAdSize(null);
     setLoadState('loading');
 
     BannerAdSize.stickySize(bannerWidth)
@@ -53,22 +66,28 @@ function YandexBanner({isDarkMode}: AdsBannerProps): React.JSX.Element | null {
     return () => {
       active = false;
     };
-  }, [bannerWidth]);
+  }, [bannerWidth, hasActivated]);
 
-  if (loadState === 'failed') {
-    return null;
-  }
+  const isVisible = visible && loadState !== 'failed';
 
   return (
     <View
-      accessibilityLabel="Реклама"
+      accessibilityElementsHidden={!isVisible}
+      accessibilityLabel={isVisible ? 'Реклама' : undefined}
+      importantForAccessibility={isVisible ? 'auto' : 'no-hide-descendants'}
+      pointerEvents={isVisible ? 'auto' : 'none'}
       style={[
         styles.bannerSlot,
-        {minHeight: reservedHeight},
-        loadState === 'loaded' && styles.bannerSlotLoaded,
-        loadState === 'loaded' && isDarkMode && styles.bannerSlotLoadedDark,
+        isVisible
+          ? {minHeight: reservedHeight}
+          : styles.bannerSlotHidden,
+        isVisible && loadState === 'loaded' && styles.bannerSlotLoaded,
+        isVisible &&
+          loadState === 'loaded' &&
+          isDarkMode &&
+          styles.bannerSlotLoadedDark,
       ]}>
-      {adSize ? (
+      {hasActivated && adSize ? (
         <BannerView
           adRequest={{adUnitId: ADS_CONFIG.adUnits.banner}}
           onAdFailedToLoad={error => {
@@ -218,7 +237,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'transparent',
     justifyContent: 'center',
+    overflow: 'hidden',
     width: '100%',
+  },
+  bannerSlotHidden: {
+    height: 0,
+    minHeight: 0,
+    opacity: 0,
   },
   bannerSlotLoaded: {
     backgroundColor: '#f3f4f6',
