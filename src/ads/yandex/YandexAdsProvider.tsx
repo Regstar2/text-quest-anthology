@@ -73,6 +73,7 @@ export class YandexAdsProvider implements AdsProvider {
   private initializationPromise: Promise<void> | null = null;
   private interstitialAd: InterstitialAd | null = null;
   private preloadPromise: Promise<void> | null = null;
+  private isInitialized = false;
   private isShowingInterstitial = false;
 
   initialize(): Promise<void> {
@@ -81,8 +82,12 @@ export class YandexAdsProvider implements AdsProvider {
     }
 
     const initialization = MobileAds.initialize()
-      .then(() => this.preloadInterstitial())
+      .then(() => {
+        this.isInitialized = true;
+        return this.preloadInterstitial();
+      })
       .catch(error => {
+        this.isInitialized = false;
         this.initializationPromise = null;
         logAdsError('SDK initialization failed.', error);
       });
@@ -92,6 +97,10 @@ export class YandexAdsProvider implements AdsProvider {
   }
 
   preloadInterstitial(): Promise<void> {
+    if (!this.isInitialized) {
+      return this.initialize();
+    }
+
     if (this.interstitialAd || this.isShowingInterstitial) {
       return Promise.resolve();
     }
