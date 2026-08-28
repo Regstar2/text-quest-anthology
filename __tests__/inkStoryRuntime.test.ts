@@ -102,6 +102,27 @@ describe('InkStoryRuntime packaged story', () => {
     expect(result.text).toContain('Третий удар выбивает стекло');
   });
 
+  test('unavailable conditional choice survives Ink state restore', () => {
+    const {runtime, snapshot} = startStory();
+
+    let current = chooseByText(runtime, snapshot, 'Зайти в дом сразу');
+    current = chooseByText(runtime, current, 'Осмотреть дом тщательно');
+    current = chooseByText(runtime, current, 'Укрепить вход');
+    current = chooseByText(runtime, current, 'Не подходить к окну');
+
+    const serializedState = runtime.exportState();
+    const restoredStory = storyLoader.load(STORY_METADATA.id);
+    const restoredRuntime = new InkStoryRuntime(restoredStory.compiledStory);
+    const restored = restoredRuntime.importState(serializedState);
+
+    expect(restored.choices).toEqual(current.choices);
+    expect(
+      restored.choices.find(choice =>
+        choice.text.startsWith('Сразу заблокировать маленькое окно'),
+      ),
+    ).toEqual(expect.objectContaining({enabled: false, index: -1}));
+  });
+
   test('Ink state is serializable and restores the current decision point', () => {
     const {runtime, snapshot} = startStory();
     const afterPipeCheck = chooseByText(
