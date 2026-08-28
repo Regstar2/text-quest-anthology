@@ -484,26 +484,40 @@ export function App(): React.JSX.Element {
 
     return (
       <View accessibilityLabel={UI_STRINGS.choicesLabel} style={styles.choicesZone}>
-        {snapshot.choices.map(choice => (
-          <Pressable
-            accessibilityLabel={choice.text}
-            accessibilityRole="button"
-            disabled={isBusy || !enabled}
-            key={choice.index}
-            onPress={() => {
-              void choose(choice.index);
-            }}
-            style={({pressed}) => [
-              styles.choice,
-              isDarkMode && styles.choiceDark,
-              pressed && styles.buttonPressed,
-              (isBusy || !enabled) && styles.disabled,
-            ]}>
-            <Text style={[styles.choiceText, isDarkMode && styles.textDark]}>
-              {choice.text}
-            </Text>
-          </Pressable>
-        ))}
+        {snapshot.choices.map(choice => {
+          const choiceEnabled = enabled && choice.enabled;
+
+          return (
+            <Pressable
+              accessibilityLabel={choice.text}
+              accessibilityRole="button"
+              accessibilityState={{disabled: isBusy || !choiceEnabled}}
+              disabled={isBusy || !choiceEnabled}
+              key={`${choice.index}:${choice.text}`}
+              onPress={() => {
+                if (choice.enabled) {
+                  void choose(choice.index);
+                }
+              }}
+              style={({pressed}) => [
+                styles.choice,
+                isDarkMode && styles.choiceDark,
+                !choice.enabled && styles.choiceUnavailable,
+                isDarkMode && !choice.enabled && styles.choiceUnavailableDark,
+                pressed && choiceEnabled && styles.buttonPressed,
+                (isBusy || !enabled) && styles.disabled,
+              ]}>
+              <Text
+                style={[
+                  styles.choiceText,
+                  isDarkMode && styles.textDark,
+                  !choice.enabled && styles.choiceTextUnavailable,
+                ]}>
+                {choice.text}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
     );
   };
@@ -1347,7 +1361,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   choiceDark: {borderColor: '#444444', backgroundColor: '#171717'},
+  choiceUnavailable: {
+    borderColor: '#b8b8b8',
+    borderStyle: 'dashed',
+    opacity: 0.62,
+  },
+  choiceUnavailableDark: {
+    borderColor: '#5a5a5a',
+    backgroundColor: '#141414',
+  },
   choiceText: {fontSize: 16, lineHeight: 22, color: '#222222'},
+  choiceTextUnavailable: {fontStyle: 'italic'},
   endingContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
