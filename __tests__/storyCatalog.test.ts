@@ -1,4 +1,5 @@
 import {
+  countStoryEndings,
   loadStoryCatalog,
   resolveStoryCatalogAction,
   resolveStoryCatalogState,
@@ -90,6 +91,18 @@ describe('story catalog state', () => {
     ).toBe('start');
   });
 
+  test('counts unique ending ids from compiled story data', () => {
+    expect(
+      countStoryEndings({
+        root: [
+          '^ending:ending-a',
+          '^ending:ending-b',
+          '^ending:ending-a',
+        ],
+      }),
+    ).toBe(2);
+  });
+
   test('keeps save and ending state independent for different story ids', async () => {
     const saves = new Map<string, StorySaveLoadResult>([
       [FIRST_STORY.id, {status: 'loaded', save: save(FIRST_STORY)}],
@@ -116,15 +129,37 @@ describe('story catalog state', () => {
         action: 'continue',
         progress: 'in-progress',
         unlockedEndingCount: 2,
+        totalEndingCount: null,
       },
       {
         metadata: SECOND_STORY,
         action: 'start',
         progress: 'not-started',
         unlockedEndingCount: 0,
+        totalEndingCount: null,
       },
     ]);
     expect(catalog.storageUnavailable).toBe(false);
+  });
+
+  test('uses loader story data when total ending count is available', async () => {
+    const catalog = await loadStoryCatalog(
+      {
+        listMetadata: () => [FIRST_STORY],
+        load: () => ({
+          metadata: FIRST_STORY,
+          compiledStory: {
+            root: ['^ending:first', '^ending:second'],
+          } as never,
+          assets: {cover: 'stories/story-a/assets/cover.webp'},
+        }),
+      },
+      {load: async () => ({status: 'not-found'})},
+      {count: async () => 1},
+    );
+
+    expect(catalog.items[0].unlockedEndingCount).toBe(1);
+    expect(catalog.items[0].totalEndingCount).toBe(2);
   });
 
   test('fails open when storage is unavailable', async () => {
@@ -148,6 +183,7 @@ describe('story catalog state', () => {
         action: 'start',
         progress: 'not-started',
         unlockedEndingCount: 0,
+        totalEndingCount: null,
       },
     ]);
     expect(catalog.storageUnavailable).toBe(true);
