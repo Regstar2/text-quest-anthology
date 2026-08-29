@@ -132,7 +132,6 @@ export function App(): React.JSX.Element {
   const [isMutating, setIsMutating] = useState(false);
   const [hasStartedSession, setHasStartedSession] = useState(false);
   const [pageHeight, setPageHeight] = useState(0);
-  const [pageNumber, setPageNumber] = useState(1);
   const [readerRevision, setReaderRevision] = useState(0);
   const [pageBannerVisible, setPageBannerVisible] = useState(false);
   const [feedBannerVisible, setFeedBannerVisible] = useState(false);
@@ -145,7 +144,6 @@ export function App(): React.JSX.Element {
 
   const resetReaderAdCadence = useCallback((): void => {
     pageOrdinalRef.current = 1;
-    setPageNumber(1);
     feedChoiceCountRef.current = 0;
     setPageBannerVisible(false);
     setFeedBannerVisible(false);
@@ -504,7 +502,6 @@ export function App(): React.JSX.Element {
       setMeasurement(EMPTY_MEASUREMENT);
       setSnapshot(readerSnapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
-      setPageNumber(previous => previous + 1);
 
       if (readerMode === 'pages') {
         pageOrdinalRef.current += 1;
@@ -647,7 +644,6 @@ export function App(): React.JSX.Element {
         setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
 
         const pageDelta = nextPageIndex - previousPageIndex;
-        setPageNumber(previous => Math.max(1, previous + pageDelta));
 
         if (readerMode === 'pages') {
           pageOrdinalRef.current = Math.max(
@@ -1206,6 +1202,7 @@ export function App(): React.JSX.Element {
         style={[styles.safeArea, {backgroundColor: appColors.background}]}>
         <AdsBanner
           isDarkMode={readerPalette.statusBar === 'light-content'}
+          reserveSpace={screen === 'reader' && readerMode === 'pages'}
           visible={showReaderBanner}
         />
 
@@ -1596,7 +1593,7 @@ export function App(): React.JSX.Element {
                   </Pressable>
 
                   <Text style={[styles.pageCounter, {color: readerPalette.muted}]}>
-                    {pageNumber}
+                    {effectivePageIndex + 1}
                   </Text>
 
                   <Pressable
