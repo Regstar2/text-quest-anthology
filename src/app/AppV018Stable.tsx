@@ -109,7 +109,8 @@ export function App(): React.JSX.Element {
   const sessionRef = useRef<StorySession | null>(null);
   const mutationLockRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
-  const measurementKeyRef = useRef({key: '', pageNumber: 1});
+  const measurementKeyRef = useRef('');
+  const lastPageNumberRef = useRef(1);
   const pageOrdinalRef = useRef(1);
   const feedChoiceCountRef = useRef(0);
 
@@ -132,6 +133,7 @@ export function App(): React.JSX.Element {
   const [isMutating, setIsMutating] = useState(false);
   const [hasStartedSession, setHasStartedSession] = useState(false);
   const [pageHeight, setPageHeight] = useState(0);
+  const [readerPageIndex, setReaderPageIndex] = useState(0);
   const [readerRevision, setReaderRevision] = useState(0);
   const [pageBannerVisible, setPageBannerVisible] = useState(false);
   const [feedBannerVisible, setFeedBannerVisible] = useState(false);
@@ -143,9 +145,10 @@ export function App(): React.JSX.Element {
   const readerMode = readerPreferences.mode;
 
   const resetReaderAdCadence = useCallback((): void => {
-    measurementKeyRef.current.pageNumber = 1;
+    lastPageNumberRef.current = 1;
     pageOrdinalRef.current = 1;
     feedChoiceCountRef.current = 0;
+    setReaderPageIndex(0);
     setPageBannerVisible(false);
     setFeedBannerVisible(false);
   }, []);
@@ -196,9 +199,7 @@ export function App(): React.JSX.Element {
 
       if (mode === 'pages') {
         setPageBannerVisible(false);
-        if (snapshot) {
-          setSnapshot({...snapshot, pageIndex: Number.MAX_SAFE_INTEGER});
-        }
+        setReaderPageIndex(Number.MAX_SAFE_INTEGER);
         setReaderRevision(previous => previous + 1);
         setMeasurement(EMPTY_MEASUREMENT);
       } else {
@@ -208,7 +209,7 @@ export function App(): React.JSX.Element {
 
       persistReaderPreferences({...readerPreferences, mode});
     },
-    [persistReaderPreferences, readerPreferences, snapshot],
+    [persistReaderPreferences, readerPreferences],
   );
 
   const changeReaderTheme = useCallback(
@@ -403,16 +404,20 @@ export function App(): React.JSX.Element {
     try {
       const storyPackage = storyLoader.load(storyId);
       const opened = await StorySession.open(storyPackage, storySaveRepository);
-      const readerSnapshot = opened.snapshot.isEnded
-        ? {...opened.snapshot, pageIndex: Number.MAX_SAFE_INTEGER}
-        : opened.snapshot;
+      const initialPageIndex = opened.snapshot.isEnded
+        ? Number.MAX_SAFE_INTEGER
+        : opened.snapshot.pageIndex;
 
       sessionRef.current = opened.session;
       hasStartedSessionRef.current = opened.resumed;
       resetReaderAdCadence();
       setHasStartedSession(opened.resumed);
       setActiveStory(storyPackage.metadata);
-      setSnapshot(readerSnapshot);
+      setReaderPageIndex(initialPageIndex);
+      if (!opened.snapshot.isEnded) {
+        lastPageNumberRef.current = initialPageIndex + 1;
+      }
+      setSnapshot(opened.snapshot);
       setNotice(recoveryMessage(opened.recovery));
       setReaderRevision(previous => previous + 1);
       setMeasurement(EMPTY_MEASUREMENT);
@@ -463,6 +468,8 @@ export function App(): React.JSX.Element {
       resetReaderAdCadence();
       setHasStartedSession(true);
       setActiveStory(storyPackage.metadata);
+      setReaderPageIndex(0);
+      lastPageNumberRef.current = 1;
       setSnapshot(fresh.snapshot);
       setReaderRevision(previous => previous + 1);
       setMeasurement(EMPTY_MEASUREMENT);
@@ -490,18 +497,21 @@ export function App(): React.JSX.Element {
       return;
     }
 
+    const nextReaderPageIndex =
+      readerMode === 'pages' ? effectivePageIndex + 1 : undefined;
+
     try {
-      const result = await session.choose(choiceIndex);
-      const readerSnapshot =
-        readerMode === 'pages' || result.snapshot.isEnded
-          ? {...result.snapshot, pageIndex: Number.MAX_SAFE_INTEGER}
-          : result.snapshot;
+      const result = await session.choose(choiceIndex, nextReaderPageIndex);
 
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
       setReaderRevision(previous => previous + 1);
       setMeasurement(EMPTY_MEASUREMENT);
-      setSnapshot(readerSnapshot);
+      setReaderPageIndex(nextReaderPageIndex ?? result.snapshot.pageIndex);
+      if (nextReaderPageIndex !== undefined) {
+        lastPageNumberRef.current = nextReaderPageIndex + 1;
+      }
+      setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
 
       if (readerMode === 'pages') {
@@ -543,6 +553,8 @@ export function App(): React.JSX.Element {
       setHasStartedSession(true);
       setReaderRevision(previous => previous + 1);
       setMeasurement(EMPTY_MEASUREMENT);
+      setReaderPageIndex(0);
+      lastPageNumberRef.current = 1;
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
       setScreen('reader');
@@ -581,7 +593,7 @@ export function App(): React.JSX.Element {
   const measurementText =
     readerRevision % 2 === 0 ? readerText : `${readerText}${ZERO_WIDTH_SPACE}`;
 
-  measurementKeyRef.current.key = measurementKey;
+  measurementKeyRef.current = measurementKey;
 
   const activeLines =
     measurement.key === measurementKey ? measurement.lines : EMPTY_LINES;
@@ -599,12 +611,12 @@ export function App(): React.JSX.Element {
   );
   const effectivePageIndex =
     snapshot && pages.length > 0
-      ? clampPageIndex(snapshot.pageIndex, pages.length)
+      ? clampPageIndex(readerPageIndex, pages.length)
       : 0;
   if (measurementReady && pages.length > 0) {
-    measurementKeyRef.current.pageNumber = effectivePageIndex + 1;
+    lastPageNumberRef.current = effectivePageIndex + 1;
   }
-  const displayedPageNumber = measurementKeyRef.current.pageNumber;
+  const displayedPageNumber = lastPageNumberRef.current;
   const isChoicePage =
     measurementReady &&
     !snapshot?.isEnded &&
@@ -636,12 +648,15 @@ export function App(): React.JSX.Element {
       }
 
       const nextPageIndex = clampPageIndex(requestedPageIndex, pages.length);
-      const previousPageIndex = clampPageIndex(snapshot.pageIndex, pages.length);
+      const previousPageIndex = effectivePageIndex;
 
       if (nextPageIndex === previousPageIndex) {
         endMutation();
         return;
       }
+
+      setReaderPageIndex(nextPageIndex);
+      lastPageNumberRef.current = nextPageIndex + 1;
 
       try {
         const result = await session.setPage(nextPageIndex);
@@ -661,12 +676,21 @@ export function App(): React.JSX.Element {
           );
         }
       } catch {
+        setReaderPageIndex(previousPageIndex);
+        lastPageNumberRef.current = previousPageIndex + 1;
         setNotice(UI_STRINGS.storyActionFailed);
       } finally {
         endMutation();
       }
     },
-    [beginMutation, endMutation, pages.length, readerMode, snapshot],
+    [
+      beginMutation,
+      effectivePageIndex,
+      endMutation,
+      pages.length,
+      readerMode,
+      snapshot,
+    ],
   );
 
   const pagePanResponder = useMemo(
@@ -768,7 +792,7 @@ export function App(): React.JSX.Element {
     callbackKey: string,
     lines: readonly string[],
   ) => {
-    if (measurementKeyRef.current.key !== callbackKey || lines.length === 0) {
+    if (measurementKeyRef.current !== callbackKey || lines.length === 0) {
       return;
     }
 
@@ -1597,7 +1621,9 @@ export function App(): React.JSX.Element {
                     <Text style={[styles.pageNavText, {color: readerPalette.text}]}>←</Text>
                   </Pressable>
 
-                  <Text style={[styles.pageCounter, {color: readerPalette.muted}]}>
+                  <Text
+                    key={`page-counter-${displayedPageNumber}`}
+                    style={[styles.pageCounter, {color: readerPalette.muted}]}>
                     {displayedPageNumber}
                   </Text>
 
