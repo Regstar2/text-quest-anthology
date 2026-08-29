@@ -26,28 +26,27 @@ jobs:
           $design = 'stories/zavalinka/design'
           New-Item -ItemType Directory -Path $design -Force | Out-Null
 
-          $parts = 0..3 | ForEach-Object {
-            $name = 'part{0:D2}.b64' -f $_
-            (Get-Content "$design/.canvas-upload/$name" -Raw).Trim()
-          }
-          $base64 = $parts -join ''
-          $compressed = [Convert]::FromBase64String($base64)
-          $inputStream = [IO.MemoryStream]::new($compressed)
-          $gzip = [IO.Compression.GzipStream]::new(
-            $inputStream,
-            [IO.Compression.CompressionMode]::Decompress
-          )
-          $canvasPath = "$design/zavalinka-decision-map.canvas"
-          $outputStream = [IO.File]::Create($canvasPath)
-          try {
-            $gzip.CopyTo($outputStream)
-          }
-          finally {
-            $outputStream.Dispose()
-            $gzip.Dispose()
-            $inputStream.Dispose()
-          }
+          @'
+          const fs = require('node:fs');
+          const zlib = require('node:zlib');
+          const path = require('node:path');
 
+          const design = path.join('stories', 'zavalinka', 'design');
+          const parts = [0, 1, 2, 3].map(index => {
+            const name = `part${String(index).padStart(2, '0')}.b64`;
+            return fs.readFileSync(path.join(design, '.canvas-upload', name), 'utf8').trim();
+          });
+          const compressed = Buffer.from(parts.join(''), 'base64');
+          if (compressed.length !== 23289) {
+            throw new Error(`Unexpected compressed canvas size: ${compressed.length}`);
+          }
+          const canvas = zlib.gunzipSync(compressed);
+          fs.writeFileSync(path.join(design, 'zavalinka-decision-map.canvas'), canvas);
+          '@ | Set-Content -Path "$env:RUNNER_TEMP/rebuild-zavalinka-canvas.cjs" -Encoding utf8
+
+          node "$env:RUNNER_TEMP/rebuild-zavalinka-canvas.cjs"
+
+          $canvasPath = "$design/zavalinka-decision-map.canvas"
           $actualHash = (Get-FileHash $canvasPath -Algorithm SHA256).Hash.ToLowerInvariant()
           $expectedHash = '94ecf888e57d714374b920b310808b814994e453735602eabecb8604403b0131'
           if ($actualHash -ne $expectedHash) {
