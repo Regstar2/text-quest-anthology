@@ -26,9 +26,7 @@ describe('v0.1.8 reader UI regressions', () => {
   test('terminal transition opens the ending page without blocking on history storage', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
-    expect(app).toContain(
-      '? {...result.snapshot, pageIndex: Number.MAX_SAFE_INTEGER}',
-    );
+    expect(app).toContain('pageIndex: Number.MAX_SAFE_INTEGER');
     expect(app).toContain('void recordEnding(activeStory.id, result.snapshot);');
     expect(app).not.toContain(
       'await recordEnding(activeStory.id, result.snapshot);',
@@ -45,19 +43,33 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('key={`reader-page-${measurementKey}-${effectivePageIndex}`}');
   });
 
-  test('reader footer shows one continuous page number without block totals or ellipsis', () => {
+  test('reader footer derives the displayed number from the absolute page index', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
-    expect(app).toContain('const [pageNumber, setPageNumber] = useState(1);');
-    expect(app).toContain('{pageNumber}');
+    expect(app).toContain('{effectivePageIndex + 1}');
+    expect(app).not.toContain('const [pageNumber, setPageNumber] = useState(1);');
+    expect(app).not.toContain('setPageNumber(');
     expect(app).not.toContain('`${effectivePageIndex + 1}/${pages.length}`');
     expect(app).not.toContain("readerPalette.muted}]}>\n                    …");
+  });
+
+  test('pages mode paginates the accumulated transcript and feed-to-pages opens its end', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).toContain('const passages = snapshot.passages');
+    expect(app).toContain('return passages.length > 0 ? passages : splitParagraphs(snapshot.text);');
+    expect(app).toContain('setSnapshot({...snapshot, pageIndex: Number.MAX_SAFE_INTEGER});');
+    expect(app).toMatch(
+      /readerMode === 'pages' \|\| result\.snapshot\.isEnded\s+\? \{\.\.\.result\.snapshot, pageIndex: Number\.MAX_SAFE_INTEGER\}/,
+    );
   });
 
   test('ending restart acts directly and ending labels expose number plus name', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
-    expect(app).toContain('setMenuView(null);\n    const session = sessionRef.current;');
+    expect(app).toMatch(
+      /setMenuView\(null\);\s+const session = sessionRef\.current;/,
+    );
     expect(app).toContain('void restartActiveStory();');
     expect(app).toContain('formatEndingDisplay(snapshot.endingId)');
     expect(app).toContain('formatEndingDisplay(ending.id)');
