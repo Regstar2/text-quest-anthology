@@ -32,6 +32,15 @@ describe('v0.1.8 architecture gate', () => {
     expect(session).not.toMatch(/ReaderPreferences|UnlockedEndings/i);
   });
 
+  test('selected theme is shared by the app shell and reader', () => {
+    const app = source('src/app/AppV018.tsx');
+    const strings = source('src/config/uiStrings.ts');
+
+    expect(app).toContain('const appColors: AppColors = readerPalette;');
+    expect(app).toContain('const statusBarStyle = readerPalette.statusBar;');
+    expect(strings).toContain("readerThemeLabel: 'Тема приложения'");
+  });
+
   test('locked choices are rendered from runtime state without story-specific conditions', () => {
     const app = source('src/app/AppV018.tsx');
 
