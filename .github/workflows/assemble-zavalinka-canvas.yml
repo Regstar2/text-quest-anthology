@@ -1,3 +1,4 @@
+# One-shot preparation workflow for the current v0.2.0 authoring branch.
 name: Assemble Zavalinka authoring references
 
 on:
