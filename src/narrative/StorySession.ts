@@ -11,6 +11,8 @@ export type StorySessionRecovery =
   | 'incompatible-save-reset'
   | 'storage-unavailable';
 
+export const READER_PAGE_BREAK_MARKER = '\uE001';
+
 export type StoryReaderSnapshot = InkRuntimeSnapshot &
   Readonly<{
     passages: readonly string[];
@@ -167,7 +169,12 @@ export class StorySession {
   async choose(choiceIndex: number): Promise<StorySessionMutationResult> {
     this.currentSnapshot = this.runtime.choose(choiceIndex);
     this.currentReaderText = this.currentSnapshot.text;
-    this.readerPassages.push(...passagesFromText(this.currentReaderText));
+    const nextPassages = passagesFromText(this.currentReaderText);
+
+    if (this.readerPassages.length > 0 && nextPassages.length > 0) {
+      this.readerPassages.push(READER_PAGE_BREAK_MARKER);
+    }
+    this.readerPassages.push(...nextPassages);
     this.readerPageIndex = this.currentSnapshot.isEnded
       ? LATEST_READER_PAGE_INDEX
       : 0;
