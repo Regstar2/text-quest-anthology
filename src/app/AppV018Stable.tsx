@@ -132,6 +132,7 @@ export function App(): React.JSX.Element {
   const [isMutating, setIsMutating] = useState(false);
   const [hasStartedSession, setHasStartedSession] = useState(false);
   const [pageHeight, setPageHeight] = useState(0);
+  const [pageNumber, setPageNumber] = useState(1);
   const [readerRevision, setReaderRevision] = useState(0);
   const [pageBannerVisible, setPageBannerVisible] = useState(false);
   const [feedBannerVisible, setFeedBannerVisible] = useState(false);
@@ -144,6 +145,7 @@ export function App(): React.JSX.Element {
 
   const resetReaderAdCadence = useCallback((): void => {
     pageOrdinalRef.current = 1;
+    setPageNumber(1);
     feedChoiceCountRef.current = 0;
     setPageBannerVisible(false);
     setFeedBannerVisible(false);
@@ -194,7 +196,6 @@ export function App(): React.JSX.Element {
       }
 
       if (mode === 'pages') {
-        pageOrdinalRef.current = 1;
         setPageBannerVisible(false);
         setReaderRevision(previous => previous + 1);
       } else {
@@ -501,6 +502,7 @@ export function App(): React.JSX.Element {
 
       if (readerMode === 'pages') {
         pageOrdinalRef.current += 1;
+        setPageNumber(pageOrdinalRef.current);
         setPageBannerVisible(
           pageOrdinalRef.current % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0,
         );
@@ -525,6 +527,7 @@ export function App(): React.JSX.Element {
   };
 
   const restartActiveStory = async () => {
+    setMenuView(null);
     const session = sessionRef.current;
     if (!session || !beginMutation()) {
       return;
@@ -643,6 +646,7 @@ export function App(): React.JSX.Element {
             1,
             pageOrdinalRef.current + nextPageIndex - previousPageIndex,
           );
+          setPageNumber(pageOrdinalRef.current);
           setPageBannerVisible(
             pageOrdinalRef.current % ADS_CONFIG.bannerFrequency.pagesPerBanner ===
               0,
@@ -836,14 +840,16 @@ export function App(): React.JSX.Element {
     return (
       <View style={styles.endingDockContent}>
         <Text style={[styles.endingLabel, {color: readerPalette.muted}]}>
-          {UI_STRINGS.endingLabel}
+          {formatEndingDisplay(snapshot.endingId)}
         </Text>
         <View style={styles.endingActions}>
           <Pressable
             accessibilityLabel={UI_STRINGS.restart}
             accessibilityRole="button"
             disabled={isBusy}
-            onPress={() => setMenuView('restart')}
+            onPress={() => {
+              void restartActiveStory();
+            }}
             style={({pressed}) => [
               styles.endingPrimaryAction,
               {backgroundColor: readerPalette.primary},
@@ -1034,7 +1040,6 @@ export function App(): React.JSX.Element {
                   accessibilityRole="button"
                   disabled={isBusy}
                   onPress={() => {
-                    setMenuView(null);
                     void restartActiveStory();
                   }}
                   style={({pressed}) => [
@@ -1470,7 +1475,7 @@ export function App(): React.JSX.Element {
                     },
                   ]}>
                   <Text style={[styles.endingCardTitle, {color: appColors.text}]}>
-                    {ending.id}
+                    {formatEndingDisplay(ending.id)}
                   </Text>
                   <Text
                     maxFontSizeMultiplier={1.35}
@@ -1584,7 +1589,7 @@ export function App(): React.JSX.Element {
                   </Pressable>
 
                   <Text style={[styles.pageCounter, {color: readerPalette.muted}]}>
-                    {measurementReady ? `${effectivePageIndex + 1}/${pages.length}` : '…'}
+                    {pageNumber}
                   </Text>
 
                   <Pressable
@@ -1731,6 +1736,30 @@ function formatEndingProgress(item: StoryCatalogItem): string {
   return item.totalEndingCount === null
     ? String(item.unlockedEndingCount)
     : `${item.unlockedEndingCount}/${item.totalEndingCount}`;
+}
+
+function formatEndingDisplay(endingId: string | null): string {
+  if (!endingId) {
+    return UI_STRINGS.endingLabel;
+  }
+
+  const match = /^e(\d+)(?:[_-](.+))?$/i.exec(endingId.trim());
+  if (!match) {
+    return `${UI_STRINGS.endingLabel} · ${endingId}`;
+  }
+
+  const number = match[1];
+  const rawName = match[2] ?? '';
+  const words = rawName
+    .split(/[_-]+/g)
+    .map(word => word.trim())
+    .filter(Boolean);
+  const joinedName = words.join(' ');
+  const name = joinedName
+    ? `${joinedName.charAt(0).toUpperCase()}${joinedName.slice(1)}`
+    : '';
+
+  return `${UI_STRINGS.endingLabel} №${number}${name ? ` · ${name}` : ''}`;
 }
 
 function buildReaderParagraphs(
