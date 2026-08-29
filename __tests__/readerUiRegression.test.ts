@@ -66,16 +66,22 @@ describe('v0.1.8 reader UI regressions', () => {
     );
   });
 
-  test('choices persist page boundaries and page mode handles more than one boundary', () => {
+  test('choices persist page boundaries with their original choice reserve', () => {
     const app = source('src/app/AppV018Stable.tsx');
     const session = source('src/narrative/StorySession.ts');
 
     expect(session).toContain("export const READER_PAGE_BREAK_MARKER = '\\uE001';");
-    expect(session).toContain('this.readerPassages.push(READER_PAGE_BREAK_MARKER);');
+    expect(session).toContain(
+      'const previousChoiceCount = this.currentSnapshot.choices.length;',
+    );
+    expect(session).toContain(
+      '`${READER_PAGE_BREAK_MARKER}:${previousChoiceCount}`',
+    );
     expect(app).toContain('let segmentStart = 0;');
     expect(app).toContain('measuredLines[index].includes(FORCED_PAGE_BREAK_MARKER)');
+    expect(app).toContain('getPageBreakReserve(measuredLines[index])');
     expect(app).toContain(
-      '.filter(passage => passage !== FORCED_PAGE_BREAK_MARKER)',
+      '!passage.startsWith(FORCED_PAGE_BREAK_MARKER)',
     );
   });
 
