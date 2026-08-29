@@ -102,10 +102,13 @@ describe('StorySession persistence flow', () => {
     expect(result.snapshot.text).toContain('Внутри тихо');
     expect(result.snapshot.passages.length).toBeGreaterThan(initialPassageCount);
 
-    const pageBreakIndex = result.snapshot.passages.indexOf(
-      READER_PAGE_BREAK_MARKER,
+    const pageBreakIndex = result.snapshot.passages.findIndex(passage =>
+      passage.startsWith(READER_PAGE_BREAK_MARKER),
     );
     expect(pageBreakIndex).toBe(initialPassageCount);
+    expect(result.snapshot.passages[pageBreakIndex]).toBe(
+      `${READER_PAGE_BREAK_MARKER}:2`,
+    );
     expect(result.snapshot.passages[pageBreakIndex + 1]).toContain('Внутри тихо');
   });
 
@@ -134,8 +137,8 @@ describe('StorySession persistence flow', () => {
     expect(completed.snapshot.text).toContain('Третий удар выбивает стекло');
     expect(completed.snapshot.pageIndex).toBe(Number.MAX_SAFE_INTEGER);
     expect(
-      completed.snapshot.passages.filter(
-        passage => passage === READER_PAGE_BREAK_MARKER,
+      completed.snapshot.passages.filter(passage =>
+        passage.startsWith(READER_PAGE_BREAK_MARKER),
       ).length,
     ).toBeGreaterThan(1);
 
@@ -232,7 +235,11 @@ describe('StorySession persistence flow', () => {
     expect(restarted.snapshot.isEnded).toBe(false);
     expect(restarted.snapshot.choices).toHaveLength(2);
     expect(restarted.snapshot.text).toContain('Ливень начался не сразу');
-    expect(restarted.snapshot.passages).not.toContain(READER_PAGE_BREAK_MARKER);
+    expect(
+      restarted.snapshot.passages.some(passage =>
+        passage.startsWith(READER_PAGE_BREAK_MARKER),
+      ),
+    ).toBe(false);
   });
 
   test('raw invalid JSON is handled as corrupted save before Ink restore', async () => {
