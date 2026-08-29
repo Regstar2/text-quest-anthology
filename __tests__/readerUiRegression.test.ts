@@ -34,4 +34,17 @@ describe('v0.1.8 reader UI regressions', () => {
       'await recordEnding(activeStory.id, result.snapshot);',
     );
   });
+
+  test('page measurement cannot paint over visible reader text during remeasurement', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).not.toContain('fallbackPageParagraphs');
+    expect(app).toContain("top: -10000");
+    expect(app).toContain("color: 'transparent'");
+    expect(app).toContain('collapsable={false}');
+    expect(app).toContain('key={`reader-page-${measurementKey}-${effectivePageIndex}`}');
+    expect(app).toContain(
+      "{measurementReady ? `${effectivePageIndex + 1}/${pages.length}` : '…'}",
+    );
+  });
 });
