@@ -10,3 +10,4 @@ INCLUDE scenes/05_attic-and-exit/main.ink
 INCLUDE scenes/06_escape-and-endings/main.ink
 
 -> start
+meow 
