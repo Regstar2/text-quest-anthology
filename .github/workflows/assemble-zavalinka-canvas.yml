@@ -7,6 +7,7 @@ on:
       - "feature/v0.2.0-zavalinka-ink-skeleton"
     paths:
       - ".github/workflows/assemble-zavalinka-canvas.yml"
+      - "stories/zavalinka/design/.canvas-upload/**"
 
 permissions:
   contents: write
