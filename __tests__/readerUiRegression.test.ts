@@ -23,10 +23,15 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('isEndingPage ? renderEndingActions() : renderChoices(true)');
   });
 
-  test('terminal transition opens the ending page without blocking on history storage', () => {
+  test('terminal transition opens the first page after the previous choice page without blocking on history storage', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
-    expect(app).toContain('pageIndex: Number.MAX_SAFE_INTEGER');
+    expect(app).toContain(
+      "readerMode === 'pages' ? effectivePageIndex + 1 : undefined;",
+    );
+    expect(app).toContain(
+      'const result = await session.choose(choiceIndex, nextReaderPageIndex);',
+    );
     expect(app).toContain('void recordEnding(activeStory.id, result.snapshot);');
     expect(app).not.toContain(
       'await recordEnding(activeStory.id, result.snapshot);',
@@ -43,17 +48,30 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('key={`reader-page-${measurementKey}-${effectivePageIndex}`}');
   });
 
-  test('reader footer keeps the last resolved number while a new measurement is pending', () => {
+  test('reader cursor drives text, arrows and counter from one page index', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
-    expect(app).toContain("const measurementKeyRef = useRef({key: '', pageNumber: 1});");
-    expect(app).toContain('measurementKeyRef.current.pageNumber = effectivePageIndex + 1;');
-    expect(app).toContain('const displayedPageNumber = measurementKeyRef.current.pageNumber;');
+    expect(app).toContain(
+      'const [readerPageIndex, setReaderPageIndex] = useState(0);',
+    );
+    expect(app).toContain('clampPageIndex(readerPageIndex, pages.length)');
+    expect(app).toContain('const previousPageIndex = effectivePageIndex;');
+    expect(app).toContain('setReaderPageIndex(nextPageIndex);');
+    expect(app).toContain('lastPageNumberRef.current = nextPageIndex + 1;');
+    expect(app).toContain('key={`page-counter-${displayedPageNumber}`}');
     expect(app).toContain('{displayedPageNumber}');
     expect(app).not.toContain('const [pageNumber, setPageNumber] = useState(1);');
     expect(app).not.toContain('setPageNumber(');
     expect(app).not.toContain('`${effectivePageIndex + 1}/${pages.length}`');
     expect(app).not.toContain("readerPalette.muted}]}>\n                    …");
+  });
+
+  test('reader footer keeps the last resolved number only while measurement is pending', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).toContain('const lastPageNumberRef = useRef(1);');
+    expect(app).toContain('lastPageNumberRef.current = effectivePageIndex + 1;');
+    expect(app).toContain('const displayedPageNumber = lastPageNumberRef.current;');
   });
 
   test('page mode reserves banner height so ad visibility cannot repaginate the text', () => {
@@ -94,9 +112,9 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('const passages = snapshot.passages');
     expect(app).toContain('if (passages.length === 0)');
     expect(app).toContain('return passages;');
-    expect(app).toContain('setSnapshot({...snapshot, pageIndex: Number.MAX_SAFE_INTEGER});');
-    expect(app).toMatch(
-      /readerMode === 'pages' \|\| result\.snapshot\.isEnded\s+\? \{\.\.\.result\.snapshot, pageIndex: Number\.MAX_SAFE_INTEGER\}/,
+    expect(app).toContain('setReaderPageIndex(Number.MAX_SAFE_INTEGER);');
+    expect(app).not.toContain(
+      'setSnapshot({...snapshot, pageIndex: Number.MAX_SAFE_INTEGER});',
     );
   });
 
