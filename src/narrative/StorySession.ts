@@ -31,6 +31,7 @@ export type StorySessionMutationResult = Readonly<{
 
 type Clock = () => Date;
 const systemClock: Clock = () => new Date();
+const LATEST_READER_PAGE_INDEX = Number.MAX_SAFE_INTEGER;
 
 export class StorySession {
   private runtime: InkStoryRuntime;
@@ -167,7 +168,9 @@ export class StorySession {
     this.currentSnapshot = this.runtime.choose(choiceIndex);
     this.currentReaderText = this.currentSnapshot.text;
     this.readerPassages.push(...passagesFromText(this.currentReaderText));
-    this.readerPageIndex = 0;
+    this.readerPageIndex = this.currentSnapshot.isEnded
+      ? LATEST_READER_PAGE_INDEX
+      : 0;
 
     return {
       snapshot: this.readerSnapshot(),
