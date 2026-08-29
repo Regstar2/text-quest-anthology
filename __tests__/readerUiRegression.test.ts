@@ -11,7 +11,9 @@ const processModule = jest.requireActual('process') as {
 };
 
 function source(path: string): string {
-  return fs.readFileSync(pathModule.join(processModule.cwd(), path), 'utf8');
+  return fs
+    .readFileSync(pathModule.join(processModule.cwd(), path), 'utf8')
+    .replace(/\r\n/g, '\n');
 }
 
 describe('v0.1.8 reader UI regressions', () => {
