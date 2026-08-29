@@ -1112,7 +1112,7 @@ export function App(): React.JSX.Element {
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle={statusBarStyle} backgroundColor={safeBackground} />
+      <StatusBar barStyle={statusBarStyle} />
       <SafeAreaView style={[styles.safeArea, {backgroundColor: safeBackground}]}>
         <AdsBanner
           isDarkMode={
@@ -2063,7 +2063,7 @@ const styles = StyleSheet.create({
   },
   pageTextArea: {flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative'},
   tapZones: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 1,
     flexDirection: 'row',
   },
