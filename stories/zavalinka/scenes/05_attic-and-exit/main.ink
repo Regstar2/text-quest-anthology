@@ -1,0 +1,15 @@
+// Scene group: 05_attic-and-exit
+INCLUDE scenes/05_attic-and-exit/05_01_attic-both-alive.ink
+INCLUDE scenes/05_attic-and-exit/05_02_attic-lera-alone.ink
+INCLUDE scenes/05_attic-and-exit/05_03_attic-ilya-alone.ink
+INCLUDE scenes/05_attic-and-exit/05_04_route-by-pipe-knowledge.ink
+INCLUDE scenes/05_attic-and-exit/05_05_pipe-known-before-window-contact.ink
+INCLUDE scenes/05_attic-and-exit/05_06_choice-before-attic-window-contact.ink
+INCLUDE scenes/05_attic-and-exit/05_07_check-hatch-downstairs.ink
+INCLUDE scenes/05_attic-and-exit/05_08_after-hatch-check-both-alive.ink
+INCLUDE scenes/05_attic-and-exit/05_09_canonical-attic-window-contact.ink
+INCLUDE scenes/05_attic-and-exit/05_10_choice-after-third-window-hit.ink
+INCLUDE scenes/05_attic-and-exit/05_11_ending-attic-window-breach.ink
+INCLUDE scenes/05_attic-and-exit/05_12_attic-window-secured.ink
+INCLUDE scenes/05_attic-and-exit/05_13_wait-for-dawn-on-attic.ink
+INCLUDE scenes/05_attic-and-exit/05_14_open-opposite-gable-exit.ink
