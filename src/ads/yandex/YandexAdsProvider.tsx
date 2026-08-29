@@ -38,10 +38,7 @@ function getNativeBannerController(): NativeBannerControllerModule | null {
   );
 }
 
-function YandexBanner({
-  reserveSpace = false,
-  visible,
-}: AdsBannerProps): React.JSX.Element {
+function YandexBanner({visible}: AdsBannerProps): React.JSX.Element {
   const {height} = useWindowDimensions();
   const reservedHeight = Math.min(
     ADS_CONFIG.bannerLayout.maxHeight,
@@ -80,8 +77,7 @@ function YandexBanner({
       pointerEvents="none"
       style={{
         flexShrink: 0,
-        height:
-          canShowNativeBanner && (visible || reserveSpace) ? reservedHeight : 0,
+        height: canShowNativeBanner && visible ? reservedHeight : 0,
         width: '100%',
       }}
     />
