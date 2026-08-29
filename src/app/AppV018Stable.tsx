@@ -488,11 +488,15 @@ export function App(): React.JSX.Element {
 
     try {
       const result = await session.choose(choiceIndex);
+      const readerSnapshot = result.snapshot.isEnded
+        ? {...result.snapshot, pageIndex: Number.MAX_SAFE_INTEGER}
+        : result.snapshot;
+
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
       setReaderRevision(previous => previous + 1);
       setMeasurement(EMPTY_MEASUREMENT);
-      setSnapshot(result.snapshot);
+      setSnapshot(readerSnapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
 
       if (readerMode === 'pages') {
@@ -509,7 +513,7 @@ export function App(): React.JSX.Element {
       }
 
       if (result.snapshot.isEnded) {
-        await recordEnding(activeStory.id, result.snapshot);
+        void recordEnding(activeStory.id, result.snapshot);
       }
 
       setScreen('reader');
@@ -1549,17 +1553,16 @@ export function App(): React.JSX.Element {
                     </View>
                   </View>
 
-                  <View
-                    pointerEvents={isInteractionPage ? 'auto' : 'none'}
-                    style={[
-                      styles.interactionDock,
-                      {height: interactionReserve},
-                      !isInteractionPage && styles.interactionDockHidden,
-                    ]}>
-                    {isEndingPage
-                      ? renderEndingActions()
-                      : renderChoices(isChoicePage && measurementReady)}
-                  </View>
+                  {isInteractionPage ? (
+                    <View
+                      pointerEvents="auto"
+                      style={[
+                        styles.interactionDock,
+                        {height: interactionReserve},
+                      ]}>
+                      {isEndingPage ? renderEndingActions() : renderChoices(true)}
+                    </View>
+                  ) : null}
                 </View>
 
                 <View style={styles.pageFooter}>
@@ -2147,7 +2150,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     zIndex: 3,
   },
-  interactionDockHidden: {opacity: 0},
   pageFooter: {
     flexShrink: 0,
     minHeight: 54,
