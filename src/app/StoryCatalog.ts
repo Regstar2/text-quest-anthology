@@ -13,6 +13,7 @@ export type StoryCatalogItem = Readonly<{
   action: StoryCatalogAction;
   progress: StoryCatalogProgress;
   unlockedEndingCount: number;
+  totalEndingCount: number | null;
 }>;
 
 export type StoryCatalogSnapshot = Readonly<{
@@ -20,7 +21,8 @@ export type StoryCatalogSnapshot = Readonly<{
   storageUnavailable: boolean;
 }>;
 
-type StoryMetadataSource = Pick<StoryLoader, 'listMetadata'>;
+type StoryCatalogSource = Pick<StoryLoader, 'listMetadata'> &
+  Partial<Pick<StoryLoader, 'load'>>;
 type StorySaveSource = Pick<StorySaveRepository, 'load'>;
 type EndingHistorySource = Readonly<{
   count(storyId: string): Promise<number>;
@@ -31,7 +33,7 @@ type EndingHistorySource = Readonly<{
 }>;
 
 export async function loadStoryCatalog(
-  loader: StoryMetadataSource,
+  loader: StoryCatalogSource,
   repository: StorySaveSource,
   endings?: EndingHistorySource,
 ): Promise<StoryCatalogSnapshot> {
@@ -74,11 +76,47 @@ export async function loadStoryCatalog(
       }
     }
 
+    let totalEndingCount: number | null = null;
+    if (loader.load) {
+      try {
+        totalEndingCount = countStoryEndings(
+          loader.load(metadata.id).compiledStory,
+        );
+      } catch {
+        totalEndingCount = null;
+      }
+    }
+
     const state = resolveStoryCatalogState(metadata, loadResult);
-    items.push({metadata, ...state, unlockedEndingCount});
+    items.push({
+      metadata,
+      ...state,
+      unlockedEndingCount,
+      totalEndingCount,
+    });
   }
 
   return {items, storageUnavailable};
+}
+
+export function countStoryEndings(compiledStory: unknown): number {
+  let serialized: string;
+
+  try {
+    serialized = JSON.stringify(compiledStory);
+  } catch {
+    return 0;
+  }
+
+  const endingIds = new Set<string>();
+  for (const match of serialized.matchAll(/ending:([A-Za-z0-9._-]+)/g)) {
+    const endingId = match[1]?.trim();
+    if (endingId) {
+      endingIds.add(endingId);
+    }
+  }
+
+  return endingIds.size;
 }
 
 export function resolveStoryCatalogAction(
