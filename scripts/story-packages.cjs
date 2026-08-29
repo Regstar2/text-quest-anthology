@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {Compiler} = require('inkjs/full');
+const {PosixFileHandler} = require('inkjs/compiler/FileHandler/PosixFileHandler');
 
 const REQUIRED_METADATA_FIELDS = [
   'id',
@@ -38,6 +39,7 @@ function buildStoryPackages({storiesDir, generatedDir}) {
     compiledStoryJson: compileInk(
       descriptor.storySource,
       `${descriptor.metadata.id}/story.ink`,
+      descriptor.packageDirectory,
     ),
   }));
 
@@ -100,6 +102,7 @@ function readStoryPackage(packageDirectory, storiesDir) {
 
   return {
     directoryName,
+    packageDirectory,
     metadata,
     storySource: fs.readFileSync(storyPath, 'utf8').replace(/^\uFEFF/, ''),
     assets: {
@@ -185,7 +188,7 @@ function validateUniqueStoryIds(descriptors) {
     if (previousDirectory) {
       throw new StoryPackageBuildError(
         'DUPLICATE_STORY_ID',
-        `Story id "${descriptor.metadata.id}" is used by both ${previousDirectory} and ${descriptor.directoryName}.`,
+        `Story id "${metadata.id}" is used by both ${previousDirectory} and ${descriptor.directoryName}.`,
       );
     }
 
@@ -238,12 +241,14 @@ function validateAssetPath(resourcePath, packageDirectory, fieldName, storyName)
   }
 }
 
-function compileInk(source, label) {
+function compileInk(source, label, packageDirectory) {
   const diagnostics = [];
   let story;
 
   try {
+    const fileHandler = new PosixFileHandler(packageDirectory);
     const compiler = new Compiler(source, {
+      fileHandler,
       errorHandler: (message, errorType) => {
         diagnostics.push(
           errorType === undefined ? message : `${errorType}: ${message}`,
