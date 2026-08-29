@@ -77,7 +77,7 @@ function YandexBanner({visible}: AdsBannerProps): React.JSX.Element {
       pointerEvents="none"
       style={{
         flexShrink: 0,
-        height: visible && canShowNativeBanner ? reservedHeight : 0,
+        height: canShowNativeBanner && visible ? reservedHeight : 0,
         width: '100%',
       }}
     />

@@ -5,15 +5,26 @@ export const UI_STRINGS = {
   prototypeTitle: 'Мобильный reader prototype',
   prototypeStatus: 'Ink runtime · локальные сохранения · reader flow',
   stories: 'Истории',
+  settings: 'Настройки',
+  reading: 'Чтение',
   loadingCatalog: 'Загрузка каталога…',
   catalogEmpty: 'В каталоге пока нет доступных историй.',
   catalogStart: 'Начать',
+  progressStarted: 'Прохождение начато',
+  progressCompleted: 'Прохождение завершено',
   loadingStory: 'Загрузка истории…',
   startupFailed: 'Не удалось запустить историю.',
   startStory: 'Начать историю',
   continueStory: 'Продолжить',
   viewEnding: 'Посмотреть концовку',
+  endings: 'Концовки',
+  endingsOpened: 'Открыто концовок',
+  loadingEndings: 'Загрузка концовок…',
+  endingsEmptyTitle: 'Открытых концовок пока нет',
+  endingsEmptyDescription:
+    'Завершите прохождение истории — открытая концовка появится здесь.',
   menu: 'Меню',
+  close: 'Закрыть',
   returnToMain: 'В главное меню',
   returnToCatalog: 'К историям',
   returnToStart: 'На стартовый экран',
@@ -21,11 +32,15 @@ export const UI_STRINGS = {
   endingMenu: 'К историям',
   exitStory: 'Выйти из истории',
   choicesLabel: 'Варианты выбора',
+  choiceLocked: 'Недоступный вариант',
   readerModeLabel: 'Режим чтения',
   readerModePages: 'Страницы',
   readerModeFeed: 'Лента',
   readerModePagesHint: 'Текст автоматически заполняет доступную страницу без прокрутки.',
   readerModeFeedHint: 'Накопительная лента предыдущих фрагментов.',
+  readerThemeLabel: 'Тема приложения',
+  readerThemeHint:
+    'Выбранная тема применяется ко всему приложению, включая экран чтения. Авто следует системной теме.',
   pageLabel: 'Страница',
   previousPage: 'Назад',
   nextPage: 'Вперёд',
@@ -33,15 +48,19 @@ export const UI_STRINGS = {
   finalTextLabel: 'Финальный текст',
   restart: 'Начать заново',
   restartConfirmation:
-    'Текущий прогресс этой истории будет сброшен. Другие истории не затрагиваются.',
+    'Текущий прогресс этой истории будет сброшен. Уже открытые концовки и другие истории не затрагиваются.',
   cancel: 'Отмена',
   corruptedSaveReset:
     'Сохранение повреждено и было безопасно сброшено. История начата заново.',
   incompatibleSaveReset:
     'Сохранение относится к несовместимой версии истории и было сброшено.',
   storageUnavailable:
-    'Локальное хранилище недоступно. История запущена без восстановления.',
+    'Локальное хранилище недоступно. Текущий экран продолжает работать без гарантии сохранения.',
   saveFailed:
     'Не удалось сохранить прогресс. Текущий сеанс продолжает работать.',
+  preferenceSaveFailed:
+    'Не удалось сохранить настройки приложения. Изменения действуют до перезапуска приложения.',
+  endingSaveFailed:
+    'Не удалось сохранить открытую концовку. Текущее прохождение не прервано.',
   storyActionFailed: 'Не удалось применить действие к истории.',
 } as const;

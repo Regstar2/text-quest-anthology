@@ -1,6 +1,8 @@
 import {
+  countStoryEndings,
   loadStoryCatalog,
   resolveStoryCatalogAction,
+  resolveStoryCatalogState,
 } from '../src/app/StoryCatalog';
 import type {StoryMetadata} from '../src/narrative/StoryMetadata';
 import type {
@@ -43,7 +45,7 @@ function save(
 }
 
 describe('story catalog state', () => {
-  test('maps save state to start, continue and ending actions', () => {
+  test('maps save state to start, continue and restart actions', () => {
     expect(resolveStoryCatalogAction(FIRST_STORY, {status: 'not-found'})).toBe(
       'start',
     );
@@ -58,7 +60,26 @@ describe('story catalog state', () => {
         status: 'loaded',
         save: save(FIRST_STORY, true),
       }),
-    ).toBe('ending');
+    ).toBe('restart');
+  });
+
+  test('exposes explicit progress state for the card UI', () => {
+    expect(resolveStoryCatalogState(FIRST_STORY, {status: 'not-found'})).toEqual({
+      action: 'start',
+      progress: 'not-started',
+    });
+    expect(
+      resolveStoryCatalogState(FIRST_STORY, {
+        status: 'loaded',
+        save: save(FIRST_STORY),
+      }),
+    ).toEqual({action: 'continue', progress: 'in-progress'});
+    expect(
+      resolveStoryCatalogState(FIRST_STORY, {
+        status: 'loaded',
+        save: save(FIRST_STORY, true),
+      }),
+    ).toEqual({action: 'restart', progress: 'completed'});
   });
 
   test('does not offer continue for an incompatible content version', () => {
@@ -70,13 +91,26 @@ describe('story catalog state', () => {
     ).toBe('start');
   });
 
-  test('keeps save state independent for different story ids', async () => {
+  test('counts unique ending ids from compiled story data', () => {
+    expect(
+      countStoryEndings({
+        root: [
+          '^ending:ending-a',
+          '^ending:ending-b',
+          '^ending:ending-a',
+        ],
+      }),
+    ).toBe(2);
+  });
+
+  test('keeps save and ending state independent for different story ids', async () => {
     const saves = new Map<string, StorySaveLoadResult>([
-      [
-        FIRST_STORY.id,
-        {status: 'loaded', save: save(FIRST_STORY)},
-      ],
+      [FIRST_STORY.id, {status: 'loaded', save: save(FIRST_STORY)}],
       [SECOND_STORY.id, {status: 'not-found'}],
+    ]);
+    const endingCounts = new Map<string, number>([
+      [FIRST_STORY.id, 2],
+      [SECOND_STORY.id, 0],
     ]);
 
     const catalog = await loadStoryCatalog(
@@ -84,13 +118,48 @@ describe('story catalog state', () => {
       {
         load: async storyId => saves.get(storyId) ?? {status: 'not-found'},
       },
+      {
+        count: async storyId => endingCounts.get(storyId) ?? 0,
+      },
     );
 
     expect(catalog.items).toEqual([
-      {metadata: FIRST_STORY, action: 'continue'},
-      {metadata: SECOND_STORY, action: 'start'},
+      {
+        metadata: FIRST_STORY,
+        action: 'continue',
+        progress: 'in-progress',
+        unlockedEndingCount: 2,
+        totalEndingCount: null,
+      },
+      {
+        metadata: SECOND_STORY,
+        action: 'start',
+        progress: 'not-started',
+        unlockedEndingCount: 0,
+        totalEndingCount: null,
+      },
     ]);
     expect(catalog.storageUnavailable).toBe(false);
+  });
+
+  test('uses loader story data when total ending count is available', async () => {
+    const catalog = await loadStoryCatalog(
+      {
+        listMetadata: () => [FIRST_STORY],
+        load: () => ({
+          metadata: FIRST_STORY,
+          compiledStory: {
+            root: ['^ending:first', '^ending:second'],
+          } as never,
+          assets: {cover: 'stories/story-a/assets/cover.webp'},
+        }),
+      },
+      {load: async () => ({status: 'not-found'})},
+      {count: async () => 1},
+    );
+
+    expect(catalog.items[0].unlockedEndingCount).toBe(1);
+    expect(catalog.items[0].totalEndingCount).toBe(2);
   });
 
   test('fails open when storage is unavailable', async () => {
@@ -101,9 +170,22 @@ describe('story catalog state', () => {
           throw new Error('storage unavailable');
         },
       },
+      {
+        count: async () => {
+          throw new Error('ending storage unavailable');
+        },
+      },
     );
 
-    expect(catalog.items).toEqual([{metadata: FIRST_STORY, action: 'start'}]);
+    expect(catalog.items).toEqual([
+      {
+        metadata: FIRST_STORY,
+        action: 'start',
+        progress: 'not-started',
+        unlockedEndingCount: 0,
+        totalEndingCount: null,
+      },
+    ]);
     expect(catalog.storageUnavailable).toBe(true);
   });
 });
