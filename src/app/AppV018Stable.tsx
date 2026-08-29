@@ -655,6 +655,18 @@ export function App(): React.JSX.Element {
         return;
       }
 
+      const pageDelta = nextPageIndex - previousPageIndex;
+      const previousPageOrdinal = pageOrdinalRef.current;
+      const previousBannerVisible = pageBannerVisible;
+
+      if (readerMode === 'pages') {
+        const nextPageOrdinal = Math.max(1, previousPageOrdinal + pageDelta);
+        pageOrdinalRef.current = nextPageOrdinal;
+        setPageBannerVisible(
+          nextPageOrdinal % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0,
+        );
+      }
+
       setReaderPageIndex(nextPageIndex);
       lastPageNumberRef.current = nextPageIndex + 1;
 
@@ -662,20 +674,9 @@ export function App(): React.JSX.Element {
         const result = await session.setPage(nextPageIndex);
         setSnapshot(result.snapshot);
         setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
-
-        const pageDelta = nextPageIndex - previousPageIndex;
-
-        if (readerMode === 'pages') {
-          pageOrdinalRef.current = Math.max(
-            1,
-            pageOrdinalRef.current + pageDelta,
-          );
-          setPageBannerVisible(
-            pageOrdinalRef.current % ADS_CONFIG.bannerFrequency.pagesPerBanner ===
-              0,
-          );
-        }
       } catch {
+        pageOrdinalRef.current = previousPageOrdinal;
+        setPageBannerVisible(previousBannerVisible);
         setReaderPageIndex(previousPageIndex);
         lastPageNumberRef.current = previousPageIndex + 1;
         setNotice(UI_STRINGS.storyActionFailed);
@@ -687,6 +688,7 @@ export function App(): React.JSX.Element {
       beginMutation,
       effectivePageIndex,
       endMutation,
+      pageBannerVisible,
       pages.length,
       readerMode,
       snapshot,
@@ -1231,7 +1233,7 @@ export function App(): React.JSX.Element {
         style={[styles.safeArea, {backgroundColor: appColors.background}]}>
         <AdsBanner
           isDarkMode={readerPalette.statusBar === 'light-content'}
-          reserveSpace={screen === 'reader' && readerMode === 'pages'}
+          reserveSpace={false}
           visible={showReaderBanner}
         />
 
@@ -1551,7 +1553,7 @@ export function App(): React.JSX.Element {
                   <View
                     {...pagePanResponder.panHandlers}
                     collapsable={false}
-                    key={`reader-page-${measurementKey}-${effectivePageIndex}`}
+                    key={`reader-page-${measurementKey}`}
                     style={[
                       styles.pageTextArea,
                       isInteractionPage && {
@@ -1560,7 +1562,7 @@ export function App(): React.JSX.Element {
                     ]}>
                     {visiblePageParagraphs.map((paragraph, index) => (
                       <Text
-                        key={`page-${readerRevision}-${effectivePageIndex}-${index}`}
+                        key={`page-${readerRevision}-${index}`}
                         maxFontSizeMultiplier={1.35}
                         style={[styles.storyParagraph, {color: readerPalette.text}]}>
                         {paragraph}
