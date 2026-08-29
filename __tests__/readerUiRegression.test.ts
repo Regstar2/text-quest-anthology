@@ -25,11 +25,14 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('isEndingPage ? renderEndingActions() : renderChoices(true)');
   });
 
-  test('terminal transition opens the first page after the previous choice page without blocking on history storage', () => {
+  test('terminal transition advances from the page actually shown to the reader', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
     expect(app).toContain(
-      "readerMode === 'pages' ? effectivePageIndex + 1 : undefined;",
+      'stablePageFrameRef.current?.pageIndex ?? effectivePageIndex;',
+    );
+    expect(app).toContain(
+      "readerMode === 'pages' ? currentReaderPageIndex + 1 : undefined;",
     );
     expect(app).toContain(
       'const result = await session.choose(choiceIndex, nextReaderPageIndex);',
@@ -103,6 +106,23 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('lastPageNumberRef.current = pageNumber;');
     expect(app).toContain(
       'displayedPageFrame?.pageNumber ?? lastPageNumberRef.current;',
+    );
+  });
+
+  test('page pagination uses the same canonical height with or without a banner', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).toContain('useWindowDimensions');
+    expect(app).toContain('const bannerReservedHeight = Math.min(');
+    expect(app).toContain('const paginationHeight =');
+    expect(app).toContain(
+      'pageHeight - (pageBannerActive ? 0 : bannerReservedHeight)',
+    );
+    expect(app).toContain(
+      'paginateLines(activeLines, paginationHeight, interactionReserve)',
+    );
+    expect(app).toContain(
+      'key: `${readerRevision}:${effectivePageIndex}:${paginationHeight}`',
     );
   });
 
