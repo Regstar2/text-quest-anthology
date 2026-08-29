@@ -569,8 +569,8 @@ export function App(): React.JSX.Element {
     () =>
       readerParagraphs
         .map(paragraph =>
-          paragraph === FORCED_PAGE_BREAK_MARKER
-            ? FORCED_PAGE_BREAK_MARKER
+          paragraph.startsWith(FORCED_PAGE_BREAK_MARKER)
+            ? paragraph
             : indentParagraph(paragraph),
         )
         .join('\n'),
@@ -1626,7 +1626,10 @@ export function App(): React.JSX.Element {
                 style={styles.readerScroll}>
                 <View style={styles.feedText}>
                   {snapshot.passages
-                    .filter(passage => passage !== FORCED_PAGE_BREAK_MARKER)
+                    .filter(
+                      passage =>
+                        !passage.startsWith(FORCED_PAGE_BREAK_MARKER),
+                    )
                     .map((passage, index) => (
                       <Text
                         key={`${index}-${passage.slice(0, 24)}`}
@@ -1783,7 +1786,10 @@ function buildReaderParagraphs(
     return splitParagraphs(snapshot.text);
   }
 
-  if (!snapshot.isEnded || passages.includes(FORCED_PAGE_BREAK_MARKER)) {
+  if (
+    !snapshot.isEnded ||
+    passages.some(passage => passage.startsWith(FORCED_PAGE_BREAK_MARKER))
+  ) {
     return passages;
   }
 
@@ -1873,6 +1879,21 @@ function getChoiceReserve(choiceCount: number): number {
   return choiceCount * CHOICE_ROW_RESERVE + Math.max(0, choiceCount - 1) * CHOICE_GAP;
 }
 
+function getPageBreakReserve(line: string): number {
+  const markerIndex = line.indexOf(FORCED_PAGE_BREAK_MARKER);
+  if (markerIndex < 0) {
+    return 0;
+  }
+
+  const suffix = line.slice(markerIndex + FORCED_PAGE_BREAK_MARKER.length);
+  const match = /^:(\d+)/.exec(suffix);
+  if (!match) {
+    return 0;
+  }
+
+  return getChoiceReserve(Number(match[1]));
+}
+
 function paginateLines(
   measuredLines: readonly string[],
   pageHeight: number,
@@ -1905,7 +1926,14 @@ function paginateLines(
 
     const segment = measuredLines.slice(segmentStart, index);
     if (segment.length > 0) {
-      pages.push(...chunkLines(segment, normalCapacity));
+      pages.push(
+        ...paginateTail(
+          segment,
+          contentHeight,
+          normalCapacity,
+          getPageBreakReserve(measuredLines[index]),
+        ),
+      );
     }
     segmentStart = index + 1;
   }
