@@ -90,6 +90,13 @@ type ReaderMeasurement = Readonly<{
   lines: readonly string[];
 }>;
 
+type ReaderPageFrame = Readonly<{
+  key: string;
+  pageIndex: number;
+  pageNumber: number;
+  paragraphs: readonly string[];
+}>;
+
 type AppColors = Readonly<{
   background: string;
   surface: string;
@@ -110,6 +117,7 @@ export function App(): React.JSX.Element {
   const mutationLockRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
   const measurementKeyRef = useRef('');
+  const stablePageFrameRef = useRef<ReaderPageFrame | null>(null);
   const lastPageNumberRef = useRef(1);
   const pageOrdinalRef = useRef(1);
   const feedChoiceCountRef = useRef(0);
@@ -135,6 +143,7 @@ export function App(): React.JSX.Element {
   const [pageHeight, setPageHeight] = useState(0);
   const [readerPageIndex, setReaderPageIndex] = useState(0);
   const [readerRevision, setReaderRevision] = useState(0);
+  const [pageLayoutPending, setPageLayoutPending] = useState(false);
   const [pageBannerVisible, setPageBannerVisible] = useState(false);
   const [feedBannerVisible, setFeedBannerVisible] = useState(false);
   const [measurement, setMeasurement] =
@@ -145,10 +154,12 @@ export function App(): React.JSX.Element {
   const readerMode = readerPreferences.mode;
 
   const resetReaderAdCadence = useCallback((): void => {
+    stablePageFrameRef.current = null;
     lastPageNumberRef.current = 1;
     pageOrdinalRef.current = 1;
     feedChoiceCountRef.current = 0;
     setReaderPageIndex(0);
+    setPageLayoutPending(false);
     setPageBannerVisible(false);
     setFeedBannerVisible(false);
   }, []);
@@ -198,6 +209,10 @@ export function App(): React.JSX.Element {
       }
 
       if (mode === 'pages') {
+        stablePageFrameRef.current = null;
+        if (feedBannerVisible) {
+          setPageLayoutPending(true);
+        }
         setPageBannerVisible(false);
         setReaderPageIndex(Number.MAX_SAFE_INTEGER);
         setReaderRevision(previous => previous + 1);
@@ -209,7 +224,7 @@ export function App(): React.JSX.Element {
 
       persistReaderPreferences({...readerPreferences, mode});
     },
-    [persistReaderPreferences, readerPreferences],
+    [feedBannerVisible, persistReaderPreferences, readerPreferences],
   );
 
   const changeReaderTheme = useCallback(
@@ -508,17 +523,19 @@ export function App(): React.JSX.Element {
       setReaderRevision(previous => previous + 1);
       setMeasurement(EMPTY_MEASUREMENT);
       setReaderPageIndex(nextReaderPageIndex ?? result.snapshot.pageIndex);
-      if (nextReaderPageIndex !== undefined) {
-        lastPageNumberRef.current = nextReaderPageIndex + 1;
-      }
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
 
       if (readerMode === 'pages') {
-        pageOrdinalRef.current += 1;
-        setPageBannerVisible(
-          pageOrdinalRef.current % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0,
-        );
+        const nextPageOrdinal = pageOrdinalRef.current + 1;
+        const nextBannerVisible =
+          !result.snapshot.isEnded &&
+          nextPageOrdinal % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0;
+        if (nextBannerVisible !== pageBannerVisible) {
+          setPageLayoutPending(true);
+        }
+        pageOrdinalRef.current = nextPageOrdinal;
+        setPageBannerVisible(nextBannerVisible);
       } else {
         const nextChoiceCount = feedChoiceCountRef.current + 1;
         feedChoiceCountRef.current = nextChoiceCount;
@@ -613,27 +630,42 @@ export function App(): React.JSX.Element {
     snapshot && pages.length > 0
       ? clampPageIndex(readerPageIndex, pages.length)
       : 0;
-  if (measurementReady && pages.length > 0) {
-    lastPageNumberRef.current = effectivePageIndex + 1;
-  }
-  const displayedPageNumber = lastPageNumberRef.current;
-  const isChoicePage =
-    measurementReady &&
-    !snapshot?.isEnded &&
-    Boolean(snapshot?.choices.length) &&
-    effectivePageIndex === pages.length - 1;
-  const isEndingPage =
-    measurementReady &&
-    snapshot?.isEnded === true &&
-    effectivePageIndex === pages.length - 1;
-  const isInteractionPage = isChoicePage || isEndingPage;
-  const visiblePageParagraphs = useMemo(
+  const resolvedPageParagraphs = useMemo(
     () =>
       measurementReady
         ? pageLinesToParagraphs(pages[effectivePageIndex] ?? EMPTY_LINES)
         : [],
     [effectivePageIndex, measurementReady, pages],
   );
+  const pageFrameReady = measurementReady && !pageLayoutPending;
+
+  if (pageFrameReady) {
+    const pageNumber = effectivePageIndex + 1;
+    stablePageFrameRef.current = {
+      key: `${readerRevision}:${effectivePageIndex}:${pageHeight}`,
+      pageIndex: effectivePageIndex,
+      pageNumber,
+      paragraphs: resolvedPageParagraphs,
+    };
+    lastPageNumberRef.current = pageNumber;
+  }
+
+  const displayedPageFrame = stablePageFrameRef.current;
+  const displayedPageNumber =
+    displayedPageFrame?.pageNumber ?? lastPageNumberRef.current;
+  const visiblePageParagraphs = displayedPageFrame?.paragraphs ?? [];
+  const pageTransitionReady =
+    pageFrameReady && displayedPageFrame?.pageIndex === effectivePageIndex;
+  const isChoicePage =
+    pageTransitionReady &&
+    !snapshot?.isEnded &&
+    Boolean(snapshot?.choices.length) &&
+    effectivePageIndex === pages.length - 1;
+  const isEndingPage =
+    pageTransitionReady &&
+    snapshot?.isEnded === true &&
+    effectivePageIndex === pages.length - 1;
+  const isInteractionPage = isChoicePage || isEndingPage;
   const showReaderBanner =
     screen === 'reader' &&
     snapshot?.isEnded !== true &&
@@ -658,17 +690,22 @@ export function App(): React.JSX.Element {
       const pageDelta = nextPageIndex - previousPageIndex;
       const previousPageOrdinal = pageOrdinalRef.current;
       const previousBannerVisible = pageBannerVisible;
+      let bannerChanged = false;
 
       if (readerMode === 'pages') {
         const nextPageOrdinal = Math.max(1, previousPageOrdinal + pageDelta);
+        const nextBannerVisible =
+          !snapshot.isEnded &&
+          nextPageOrdinal % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0;
+        bannerChanged = nextBannerVisible !== previousBannerVisible;
+        if (bannerChanged) {
+          setPageLayoutPending(true);
+        }
         pageOrdinalRef.current = nextPageOrdinal;
-        setPageBannerVisible(
-          nextPageOrdinal % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0,
-        );
+        setPageBannerVisible(nextBannerVisible);
       }
 
       setReaderPageIndex(nextPageIndex);
-      lastPageNumberRef.current = nextPageIndex + 1;
 
       try {
         const result = await session.setPage(nextPageIndex);
@@ -676,9 +713,11 @@ export function App(): React.JSX.Element {
         setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
       } catch {
         pageOrdinalRef.current = previousPageOrdinal;
+        if (bannerChanged) {
+          setPageLayoutPending(true);
+        }
         setPageBannerVisible(previousBannerVisible);
         setReaderPageIndex(previousPageIndex);
-        lastPageNumberRef.current = previousPageIndex + 1;
         setNotice(UI_STRINGS.storyActionFailed);
       } finally {
         endMutation();
@@ -701,13 +740,13 @@ export function App(): React.JSX.Element {
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponderCapture: (_event, gestureState) =>
           readerMode === 'pages' &&
-          measurementReady &&
+          pageTransitionReady &&
           !isBusy &&
           shouldHandleHorizontalPageSwipe(gestureState.dx, gestureState.dy),
         onPanResponderRelease: (_event, gestureState) => {
           if (
             readerMode !== 'pages' ||
-            !measurementReady ||
+            !pageTransitionReady ||
             !shouldHandleHorizontalPageSwipe(gestureState.dx, gestureState.dy)
           ) {
             return;
@@ -725,8 +764,8 @@ export function App(): React.JSX.Element {
     [
       effectivePageIndex,
       isBusy,
-      measurementReady,
       moveToPage,
+      pageTransitionReady,
       pages.length,
       readerMode,
     ],
@@ -764,7 +803,7 @@ export function App(): React.JSX.Element {
           screen === 'reader' &&
           snapshot?.isEnded === true &&
           readerMode === 'pages' &&
-          measurementReady &&
+          pageTransitionReady &&
           effectivePageIndex > 0
         ) {
           void moveToPage(effectivePageIndex - 1);
@@ -781,9 +820,9 @@ export function App(): React.JSX.Element {
     catalogRestartTarget,
     effectivePageIndex,
     exitStory,
-    measurementReady,
     menuView,
     moveToPage,
+    pageTransitionReady,
     readerMode,
     screen,
     showMain,
@@ -1532,12 +1571,18 @@ export function App(): React.JSX.Element {
               <View style={styles.pageReaderContent}>
                 <View
                   collapsable={false}
-                  key={measurementKey}
                   onLayout={(event: LayoutChangeEvent) => {
-                    setPageHeight(event.nativeEvent.layout.height);
+                    const nextHeight = event.nativeEvent.layout.height;
+                    if (nextHeight !== pageHeight) {
+                      setPageHeight(nextHeight);
+                    }
+                    if (pageLayoutPending) {
+                      setPageLayoutPending(false);
+                    }
                   }}
                   style={styles.pageBody}>
                   <Text
+                    key={`measurement-${measurementKey}`}
                     maxFontSizeMultiplier={1.35}
                     onTextLayout={(event: TextLayoutEvent) => {
                       recordMeasuredLines(
@@ -1553,7 +1598,6 @@ export function App(): React.JSX.Element {
                   <View
                     {...pagePanResponder.panHandlers}
                     collapsable={false}
-                    key={`reader-page-${measurementKey}`}
                     style={[
                       styles.pageTextArea,
                       isInteractionPage && {
@@ -1562,7 +1606,7 @@ export function App(): React.JSX.Element {
                     ]}>
                     {visiblePageParagraphs.map((paragraph, index) => (
                       <Text
-                        key={`page-${readerRevision}-${index}`}
+                        key={`page-${displayedPageFrame?.key ?? 'empty'}-${index}`}
                         maxFontSizeMultiplier={1.35}
                         style={[styles.storyParagraph, {color: readerPalette.text}]}>
                         {paragraph}
@@ -1572,7 +1616,11 @@ export function App(): React.JSX.Element {
                     <View pointerEvents="box-none" style={styles.tapZones}>
                       <Pressable
                         accessibilityLabel={UI_STRINGS.previousPage}
-                        disabled={isBusy || !measurementReady || effectivePageIndex === 0}
+                        disabled={
+                          isBusy ||
+                          !pageTransitionReady ||
+                          effectivePageIndex === 0
+                        }
                         onPress={() => {
                           void moveToPage(effectivePageIndex - 1);
                         }}
@@ -1582,7 +1630,7 @@ export function App(): React.JSX.Element {
                         accessibilityLabel={UI_STRINGS.nextPage}
                         disabled={
                           isBusy ||
-                          !measurementReady ||
+                          !pageTransitionReady ||
                           effectivePageIndex >= pages.length - 1
                         }
                         onPress={() => {
@@ -1609,7 +1657,11 @@ export function App(): React.JSX.Element {
                   <Pressable
                     accessibilityLabel={UI_STRINGS.previousPage}
                     accessibilityRole="button"
-                    disabled={isBusy || !measurementReady || effectivePageIndex === 0}
+                    disabled={
+                      isBusy ||
+                      !pageTransitionReady ||
+                      effectivePageIndex === 0
+                    }
                     onPress={() => {
                       void moveToPage(effectivePageIndex - 1);
                     }}
@@ -1617,7 +1669,9 @@ export function App(): React.JSX.Element {
                       styles.pageNavButton,
                       {borderColor: readerPalette.border},
                       pressed && styles.buttonPressed,
-                      (isBusy || !measurementReady || effectivePageIndex === 0) &&
+                      (isBusy ||
+                        !pageTransitionReady ||
+                        effectivePageIndex === 0) &&
                         styles.disabled,
                     ]}>
                     <Text style={[styles.pageNavText, {color: readerPalette.text}]}>←</Text>
@@ -1634,7 +1688,7 @@ export function App(): React.JSX.Element {
                     accessibilityRole="button"
                     disabled={
                       isBusy ||
-                      !measurementReady ||
+                      !pageTransitionReady ||
                       effectivePageIndex >= pages.length - 1
                     }
                     onPress={() => {
@@ -1645,7 +1699,7 @@ export function App(): React.JSX.Element {
                       {borderColor: readerPalette.border},
                       pressed && styles.buttonPressed,
                       (isBusy ||
-                        !measurementReady ||
+                        !pageTransitionReady ||
                         effectivePageIndex >= pages.length - 1) &&
                         styles.disabled,
                     ]}>
