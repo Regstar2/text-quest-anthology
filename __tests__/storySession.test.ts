@@ -1,4 +1,8 @@
-import {StorySession, type StoryReaderSnapshot} from '../src/narrative/StorySession';
+import {
+  READER_PAGE_BREAK_MARKER,
+  StorySession,
+  type StoryReaderSnapshot,
+} from '../src/narrative/StorySession';
 import {storyLoader} from '../src/narrative/StoryLoader';
 import {
   StorySaveRepository,
@@ -81,7 +85,7 @@ describe('StorySession persistence flow', () => {
     await expect(opened.session.setPage(1.5)).rejects.toThrow('READER_PAGE_INVALID');
   });
 
-  test('choice starts a new text block at page zero and keeps feed transcript', async () => {
+  test('choice starts a fresh physical page and keeps the feed transcript', async () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
     const opened = await StorySession.open(STORY_PACKAGE, repository);
     await opened.session.setPage(1);
@@ -97,6 +101,12 @@ describe('StorySession persistence flow', () => {
     expect(result.snapshot.choices).toHaveLength(2);
     expect(result.snapshot.text).toContain('Внутри тихо');
     expect(result.snapshot.passages.length).toBeGreaterThan(initialPassageCount);
+
+    const pageBreakIndex = result.snapshot.passages.indexOf(
+      READER_PAGE_BREAK_MARKER,
+    );
+    expect(pageBreakIndex).toBe(initialPassageCount);
+    expect(result.snapshot.passages[pageBreakIndex + 1]).toContain('Внутри тихо');
   });
 
   test('terminal choice autosaves ending, current text and transcript', async () => {
@@ -123,6 +133,11 @@ describe('StorySession persistence flow', () => {
     expect(completed.snapshot.endingId).toBe('e12_glass');
     expect(completed.snapshot.text).toContain('Третий удар выбивает стекло');
     expect(completed.snapshot.pageIndex).toBe(Number.MAX_SAFE_INTEGER);
+    expect(
+      completed.snapshot.passages.filter(
+        passage => passage === READER_PAGE_BREAK_MARKER,
+      ).length,
+    ).toBeGreaterThan(1);
 
     const stored = await repository.load('zavalinka');
     expect(stored.status).toBe('loaded');
@@ -192,7 +207,7 @@ describe('StorySession persistence flow', () => {
     const stored = await repository.load('zavalinka');
     expect(stored.status).toBe('loaded');
     if (stored.status !== 'loaded') {
-      throw new Error('Expected a save fixture.');
+      throw new Error('Expected a saved reader state.');
     }
 
     await repository.save('zavalinka', {
@@ -217,6 +232,7 @@ describe('StorySession persistence flow', () => {
     expect(restarted.snapshot.isEnded).toBe(false);
     expect(restarted.snapshot.choices).toHaveLength(2);
     expect(restarted.snapshot.text).toContain('Ливень начался не сразу');
+    expect(restarted.snapshot.passages).not.toContain(READER_PAGE_BREAK_MARKER);
   });
 
   test('raw invalid JSON is handled as corrupted save before Ink restore', async () => {
