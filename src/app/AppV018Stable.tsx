@@ -132,7 +132,6 @@ export function App(): React.JSX.Element {
   const [isMutating, setIsMutating] = useState(false);
   const [hasStartedSession, setHasStartedSession] = useState(false);
   const [pageHeight, setPageHeight] = useState(0);
-  const [pageNumber, setPageNumber] = useState(1);
   const [readerRevision, setReaderRevision] = useState(0);
   const [pageBannerVisible, setPageBannerVisible] = useState(false);
   const [feedBannerVisible, setFeedBannerVisible] = useState(false);
@@ -145,7 +144,6 @@ export function App(): React.JSX.Element {
 
   const resetReaderAdCadence = useCallback((): void => {
     pageOrdinalRef.current = 1;
-    setPageNumber(1);
     feedChoiceCountRef.current = 0;
     setPageBannerVisible(false);
     setFeedBannerVisible(false);
@@ -197,7 +195,11 @@ export function App(): React.JSX.Element {
 
       if (mode === 'pages') {
         setPageBannerVisible(false);
+        if (snapshot) {
+          setSnapshot({...snapshot, pageIndex: Number.MAX_SAFE_INTEGER});
+        }
         setReaderRevision(previous => previous + 1);
+        setMeasurement(EMPTY_MEASUREMENT);
       } else {
         feedChoiceCountRef.current = 0;
         setFeedBannerVisible(false);
@@ -205,7 +207,7 @@ export function App(): React.JSX.Element {
 
       persistReaderPreferences({...readerPreferences, mode});
     },
-    [persistReaderPreferences, readerPreferences],
+    [persistReaderPreferences, readerPreferences, snapshot],
   );
 
   const changeReaderTheme = useCallback(
@@ -489,9 +491,10 @@ export function App(): React.JSX.Element {
 
     try {
       const result = await session.choose(choiceIndex);
-      const readerSnapshot = result.snapshot.isEnded
-        ? {...result.snapshot, pageIndex: Number.MAX_SAFE_INTEGER}
-        : result.snapshot;
+      const readerSnapshot =
+        readerMode === 'pages' || result.snapshot.isEnded
+          ? {...result.snapshot, pageIndex: Number.MAX_SAFE_INTEGER}
+          : result.snapshot;
 
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
@@ -502,7 +505,6 @@ export function App(): React.JSX.Element {
 
       if (readerMode === 'pages') {
         pageOrdinalRef.current += 1;
-        setPageNumber(pageOrdinalRef.current);
         setPageBannerVisible(
           pageOrdinalRef.current % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0,
         );
@@ -646,7 +648,6 @@ export function App(): React.JSX.Element {
             1,
             pageOrdinalRef.current + nextPageIndex - previousPageIndex,
           );
-          setPageNumber(pageOrdinalRef.current);
           setPageBannerVisible(
             pageOrdinalRef.current % ADS_CONFIG.bannerFrequency.pagesPerBanner ===
               0,
@@ -1589,7 +1590,7 @@ export function App(): React.JSX.Element {
                   </Pressable>
 
                   <Text style={[styles.pageCounter, {color: readerPalette.muted}]}>
-                    {pageNumber}
+                    {effectivePageIndex + 1}
                   </Text>
 
                   <Pressable
@@ -1769,16 +1770,17 @@ function buildReaderParagraphs(
     return [];
   }
 
-  const current = splitParagraphs(snapshot.text);
-  if (!snapshot.isEnded) {
-    return current;
-  }
-
-  const historyLength = Math.max(0, snapshot.passages.length - current.length);
-  const history = snapshot.passages
-    .slice(0, historyLength)
+  const passages = snapshot.passages
     .map(passage => passage.trim())
     .filter(passage => passage.length > 0);
+
+  if (!snapshot.isEnded) {
+    return passages.length > 0 ? passages : splitParagraphs(snapshot.text);
+  }
+
+  const current = splitParagraphs(snapshot.text);
+  const historyLength = Math.max(0, passages.length - current.length);
+  const history = passages.slice(0, historyLength);
 
   if (history.length === 0) {
     return current;
