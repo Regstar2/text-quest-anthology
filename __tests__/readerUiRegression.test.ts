@@ -43,14 +43,27 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('key={`reader-page-${measurementKey}-${effectivePageIndex}`}');
   });
 
-  test('reader footer derives the displayed number from the absolute page index', () => {
+  test('reader footer uses a logical page number that is independent of layout reflow', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
-    expect(app).toContain('{effectivePageIndex + 1}');
-    expect(app).not.toContain('const [pageNumber, setPageNumber] = useState(1);');
-    expect(app).not.toContain('setPageNumber(');
+    expect(app).toContain('const [pageNumber, setPageNumber] = useState(1);');
+    expect(app).toContain('{pageNumber}');
+    expect(app).toContain('setPageNumber(previous => previous + 1);');
+    expect(app).toContain('const pageDelta = nextPageIndex - previousPageIndex;');
+    expect(app).toContain(
+      'setPageNumber(previous => Math.max(1, previous + pageDelta));',
+    );
     expect(app).not.toContain('`${effectivePageIndex + 1}/${pages.length}`');
     expect(app).not.toContain("readerPalette.muted}]}>\n                    …");
+  });
+
+  test('feed choices advance the logical page number before mode-specific ad cadence', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).toMatch(
+      /setNotice\(result\.persisted \? null : UI_STRINGS\.saveFailed\);\s+setPageNumber\(previous => previous \+ 1\);\s+if \(readerMode === 'pages'\)/,
+    );
+    expect(app).toContain('setSnapshot({...snapshot, pageIndex: Number.MAX_SAFE_INTEGER});');
   });
 
   test('pages mode paginates the accumulated transcript and feed-to-pages opens its end', () => {
