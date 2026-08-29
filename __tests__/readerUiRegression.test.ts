@@ -74,17 +74,16 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('const displayedPageNumber = lastPageNumberRef.current;');
   });
 
-  test('page mode reserves banner height so ad visibility cannot repaginate the text', () => {
-    const app = source('src/app/AppV018Stable.tsx');
+  test('hidden native banner collapses its React spacer completely', () => {
     const yandexAds = source('src/ads/yandex/YandexAdsProvider.tsx');
 
-    expect(app).toMatch(
-      /reserveSpace=\{screen === 'reader' && readerMode === 'pages'\}/,
+    expect(yandexAds).toContain(
+      'function YandexBanner({visible}: AdsBannerProps): React.JSX.Element',
     );
-    expect(yandexAds).toContain('reserveSpace = false');
-    expect(yandexAds).toMatch(
-      /canShowNativeBanner && \(visible \|\| reserveSpace\) \? reservedHeight : 0/,
+    expect(yandexAds).toContain(
+      'height: canShowNativeBanner && visible ? reservedHeight : 0,',
     );
+    expect(yandexAds).not.toContain('visible || reserveSpace');
   });
 
   test('choices persist page boundaries with their original choice reserve', () => {
