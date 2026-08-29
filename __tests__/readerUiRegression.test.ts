@@ -43,10 +43,13 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('key={`reader-page-${measurementKey}-${effectivePageIndex}`}');
   });
 
-  test('reader footer derives its number from the actual stable page index', () => {
+  test('reader footer keeps the last resolved number while a new measurement is pending', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
-    expect(app).toContain('{effectivePageIndex + 1}');
+    expect(app).toContain("const measurementKeyRef = useRef({key: '', pageNumber: 1});");
+    expect(app).toContain('measurementKeyRef.current.pageNumber = effectivePageIndex + 1;');
+    expect(app).toContain('const displayedPageNumber = measurementKeyRef.current.pageNumber;');
+    expect(app).toContain('{displayedPageNumber}');
     expect(app).not.toContain('const [pageNumber, setPageNumber] = useState(1);');
     expect(app).not.toContain('setPageNumber(');
     expect(app).not.toContain('`${effectivePageIndex + 1}/${pages.length}`');
