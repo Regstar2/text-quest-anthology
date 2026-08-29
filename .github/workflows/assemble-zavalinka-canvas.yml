@@ -1,8 +1,9 @@
-name: Assemble Zavalinka canvas
+name: Assemble Zavalinka authoring references
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "feature/v0.2.0-zavalinka-ink-skeleton"
     paths:
       - ".github/workflows/assemble-zavalinka-canvas.yml"
 
@@ -32,7 +33,16 @@ jobs:
             > stories/zavalinka/design/zavalinka-decision-map.canvas
           echo "0f9f6c18a78ba22e5844bfbb41078a44816c1c2c29d5ef3517945836ab5bd098  stories/zavalinka/design/zavalinka-decision-map.canvas" | sha256sum -c -
 
-      - name: Commit final canvas and remove staging
+      - name: Copy AI text signs reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 \
+            "https://raw.githubusercontent.com/Regstar2/template/main/%D0%BF%D1%80%D0%B8%D0%B7%D0%BD%D0%B0%D0%BA%D0%B8%20%D0%B8%D0%B8/ai_text_signs_full_511.md" \
+            -o stories/zavalinka/design/ai-text-signs-full-511.md
+          test "$(wc -c < stories/zavalinka/design/ai-text-signs-full-511.md)" -eq 135799
+
+      - name: Commit authoring references and remove staging
         shell: bash
         run: |
           set -euo pipefail
@@ -41,5 +51,5 @@ jobs:
           rm -rf stories/zavalinka/design/.canvas-upload
           rm -f .github/workflows/assemble-zavalinka-canvas.yml
           git add -A
-          git commit -m "docs(zavalinka): add final decision canvas"
-          git push origin HEAD:main
+          git commit -m "docs(zavalinka): add authoring references"
+          git push origin HEAD:feature/v0.2.0-zavalinka-ink-skeleton
