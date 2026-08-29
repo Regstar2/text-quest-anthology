@@ -47,11 +47,35 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('top: -10000');
     expect(app).toContain("color: 'transparent'");
     expect(app).toContain('collapsable={false}');
-    expect(app).toContain('key={`reader-page-${measurementKey}`}');
-    expect(app).not.toContain(
-      'key={`reader-page-${measurementKey}-${effectivePageIndex}`}',
+    expect(app).toContain('key={`measurement-${measurementKey}`}');
+    expect(app).not.toContain('key={measurementKey}');
+    expect(app).not.toContain('key={`reader-page-${measurementKey}`}');
+    expect(app).toContain(
+      "key={`page-${displayedPageFrame?.key ?? 'empty'}-${index}`}",
     );
-    expect(app).toContain('key={`page-${readerRevision}-${index}`}');
+  });
+
+  test('reader holds the last fully resolved frame until measurement and layout are ready', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).toContain(
+      'const stablePageFrameRef = useRef<ReaderPageFrame | null>(null);',
+    );
+    expect(app).toContain(
+      'const [pageLayoutPending, setPageLayoutPending] = useState(false);',
+    );
+    expect(app).toContain(
+      'const pageFrameReady = measurementReady && !pageLayoutPending;',
+    );
+    expect(app).toContain('if (pageFrameReady) {');
+    expect(app).toContain('stablePageFrameRef.current = {');
+    expect(app).toContain('const displayedPageFrame = stablePageFrameRef.current;');
+    expect(app).toContain(
+      'const visiblePageParagraphs = displayedPageFrame?.paragraphs ?? [];',
+    );
+    expect(app).toContain('const pageTransitionReady =');
+    expect(app).toContain('if (pageLayoutPending) {');
+    expect(app).toContain('setPageLayoutPending(false);');
   });
 
   test('reader cursor drives text, arrows and counter from one page index', () => {
@@ -63,7 +87,7 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('clampPageIndex(readerPageIndex, pages.length)');
     expect(app).toContain('const previousPageIndex = effectivePageIndex;');
     expect(app).toContain('setReaderPageIndex(nextPageIndex);');
-    expect(app).toContain('lastPageNumberRef.current = nextPageIndex + 1;');
+    expect(app).toContain('lastPageNumberRef.current = pageNumber;');
     expect(app).toContain('key={`page-counter-${displayedPageNumber}`}');
     expect(app).toContain('{displayedPageNumber}');
     expect(app).not.toContain('const [pageNumber, setPageNumber] = useState(1);');
@@ -72,25 +96,26 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).not.toContain("readerPalette.muted}]}>\n                    …");
   });
 
-  test('reader footer keeps the last resolved number only while measurement is pending', () => {
+  test('reader footer keeps the last resolved number while a new frame is pending', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
     expect(app).toContain('const lastPageNumberRef = useRef(1);');
-    expect(app).toContain('lastPageNumberRef.current = effectivePageIndex + 1;');
-    expect(app).toContain('const displayedPageNumber = lastPageNumberRef.current;');
+    expect(app).toContain('lastPageNumberRef.current = pageNumber;');
+    expect(app).toContain(
+      'displayedPageFrame?.pageNumber ?? lastPageNumberRef.current;',
+    );
   });
 
   test('page navigation updates banner visibility before exposing the target page', () => {
     const app = source('src/app/AppV018Stable.tsx');
-    const bannerUpdate = app.indexOf(
-      'setPageBannerVisible(\n          nextPageOrdinal % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0,',
-    );
+    const bannerUpdate = app.indexOf('setPageBannerVisible(nextBannerVisible);');
     const cursorUpdate = app.indexOf('setReaderPageIndex(nextPageIndex);');
     const persistence = app.indexOf('await session.setPage(nextPageIndex);');
 
     expect(bannerUpdate).toBeGreaterThan(-1);
     expect(cursorUpdate).toBeGreaterThan(bannerUpdate);
     expect(persistence).toBeGreaterThan(cursorUpdate);
+    expect(app).toContain('setPageLayoutPending(true);');
     expect(app).toContain('setPageBannerVisible(previousBannerVisible);');
   });
 
