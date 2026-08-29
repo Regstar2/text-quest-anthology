@@ -188,7 +188,7 @@ function validateUniqueStoryIds(descriptors) {
     if (previousDirectory) {
       throw new StoryPackageBuildError(
         'DUPLICATE_STORY_ID',
-        `Story id "${metadata.id}" is used by both ${previousDirectory} and ${descriptor.directoryName}.`,
+        `Story id "${descriptor.metadata.id}" is used by both ${previousDirectory} and ${descriptor.directoryName}.`,
       );
     }
 
