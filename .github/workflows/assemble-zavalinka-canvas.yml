@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/workflows/assemble-zavalinka-canvas.yml"
       - "stories/zavalinka/design/.canvas-upload/**"
+      - "stories/zavalinka/design/.ai-upload/**"
 
 permissions:
   contents: write
@@ -20,7 +21,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Rebuild current canvas and copy AI text signs
+      - name: Rebuild current authoring references
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -33,7 +34,9 @@ jobs:
           const zlib = require('node:zlib');
           const path = require('node:path');
 
+          const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
           const design = path.join('stories', 'zavalinka', 'design');
+
           const expectedPartHashes = [
             '291adf7371d44867faaae092aef503d6fd161861eb2eedd13a10e04d546934f1',
             'f2a7957ddf64b0e769669e1dd420177cf69967f79277f603cfb5305db544b688',
@@ -43,41 +46,45 @@ jobs:
           const parts = [0, 1, 2, 3].map(index => {
             const name = `part${String(index).padStart(2, '0')}.b64`;
             const value = fs.readFileSync(path.join(design, '.canvas-upload', name), 'utf8').trim();
-            const hash = crypto.createHash('sha256').update(value, 'utf8').digest('hex');
+            const hash = sha256(Buffer.from(value, 'utf8'));
             console.log(`${name}: chars=${value.length} sha256=${hash}`);
             if (hash !== expectedPartHashes[index]) {
               throw new Error(`${name} SHA-256 mismatch: ${hash}`);
             }
             return value;
           });
-          const compressed = Buffer.from(parts.join(''), 'base64');
-          const compressedHash = crypto.createHash('sha256').update(compressed).digest('hex');
-          console.log(`compressed: bytes=${compressed.length} sha256=${compressedHash}`);
-          if (compressed.length !== 23289) {
-            throw new Error(`Unexpected compressed canvas size: ${compressed.length}`);
+
+          const canvasCompressed = Buffer.from(parts.join(''), 'base64');
+          const canvasCompressedHash = sha256(canvasCompressed);
+          if (canvasCompressed.length !== 23289 || canvasCompressedHash !== '4414809c28e3b87bf825fe021afe3985724ccfd2c6a39b27768b057a9ebcb63d') {
+            throw new Error(`Compressed canvas mismatch: bytes=${canvasCompressed.length} sha256=${canvasCompressedHash}`);
           }
-          if (compressedHash !== '4414809c28e3b87bf825fe021afe3985724ccfd2c6a39b27768b057a9ebcb63d') {
-            throw new Error(`Compressed canvas SHA-256 mismatch: ${compressedHash}`);
+          const canvas = zlib.gunzipSync(canvasCompressed);
+          const canvasHash = sha256(canvas);
+          if (canvas.length !== 99334 || canvasHash !== '94ecf888e57d714374b920b310808b814994e453735602eabecb8604403b0131') {
+            throw new Error(`Canvas mismatch: bytes=${canvas.length} sha256=${canvasHash}`);
           }
-          const canvas = zlib.gunzipSync(compressed);
           fs.writeFileSync(path.join(design, 'zavalinka-decision-map.canvas'), canvas);
-          '@ | Set-Content -Path "$env:RUNNER_TEMP/rebuild-zavalinka-canvas.cjs" -Encoding utf8
 
-          node "$env:RUNNER_TEMP/rebuild-zavalinka-canvas.cjs"
-
-          $canvasPath = "$design/zavalinka-decision-map.canvas"
-          $actualHash = (Get-FileHash $canvasPath -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expectedHash = '94ecf888e57d714374b920b310808b814994e453735602eabecb8604403b0131'
-          if ($actualHash -ne $expectedHash) {
-            throw "Canvas SHA-256 mismatch: $actualHash"
+          const aiBase64Path = path.join(design, '.ai-upload', 'ai-text-signs-full-511.md.gz.b64');
+          const aiBase64 = fs.readFileSync(aiBase64Path, 'utf8').trim();
+          const aiCompressed = Buffer.from(aiBase64, 'base64');
+          const aiCompressedHash = sha256(aiCompressed);
+          if (aiCompressed.length !== 31528 || aiCompressedHash !== '8a2dea22aaf2845665377470f624c781610c7d6e36f216cf9312ddbcac8e6fe0') {
+            throw new Error(`Compressed AI reference mismatch: bytes=${aiCompressed.length} sha256=${aiCompressedHash}`);
           }
-
-          $aiUrl = 'https://raw.githubusercontent.com/Regstar2/template/main/%D0%BF%D1%80%D0%B8%D0%B7%D0%BD%D0%B0%D0%BA%D0%B8%20%D0%B8%D0%B8/ai_text_signs_full_511.md'
-          $aiPath = "$design/ai-text-signs-full-511.md"
-          Invoke-WebRequest -Uri $aiUrl -OutFile $aiPath -UseBasicParsing
-          if ((Get-Item $aiPath).Length -ne 135799) {
-            throw "Unexpected AI text signs file size: $((Get-Item $aiPath).Length)"
+          const ai = zlib.gunzipSync(aiCompressed);
+          const aiHash = sha256(ai);
+          if (ai.length !== 135799 || aiHash !== '8a6e2c4da0ef49f3e091c20f3f89804fdbe1500672ab7823b099fe2d5ec0c0f0') {
+            throw new Error(`AI reference mismatch: bytes=${ai.length} sha256=${aiHash}`);
           }
+          fs.writeFileSync(path.join(design, 'ai-text-signs-full-511.md'), ai);
+
+          console.log(`canvas: bytes=${canvas.length} sha256=${canvasHash}`);
+          console.log(`ai-reference: bytes=${ai.length} sha256=${aiHash}`);
+          '@ | Set-Content -Path "$env:RUNNER_TEMP/rebuild-zavalinka-references.cjs" -Encoding utf8
+
+          node "$env:RUNNER_TEMP/rebuild-zavalinka-references.cjs"
 
       - name: Commit authoring references and remove upload staging
         shell: pwsh
@@ -86,6 +93,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           Remove-Item 'stories/zavalinka/design/.canvas-upload' -Recurse -Force
+          Remove-Item 'stories/zavalinka/design/.ai-upload' -Recurse -Force
           Remove-Item '.github/workflows/assemble-zavalinka-canvas.yml' -Force
           git add -A
           git commit -m 'docs(zavalinka): add current authoring references'
