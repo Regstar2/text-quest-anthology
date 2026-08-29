@@ -109,7 +109,7 @@ export function App(): React.JSX.Element {
   const sessionRef = useRef<StorySession | null>(null);
   const mutationLockRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
-  const measurementKeyRef = useRef('');
+  const measurementKeyRef = useRef({key: '', pageNumber: 1});
   const pageOrdinalRef = useRef(1);
   const feedChoiceCountRef = useRef(0);
 
@@ -143,6 +143,7 @@ export function App(): React.JSX.Element {
   const readerMode = readerPreferences.mode;
 
   const resetReaderAdCadence = useCallback((): void => {
+    measurementKeyRef.current.pageNumber = 1;
     pageOrdinalRef.current = 1;
     feedChoiceCountRef.current = 0;
     setPageBannerVisible(false);
@@ -580,7 +581,7 @@ export function App(): React.JSX.Element {
   const measurementText =
     readerRevision % 2 === 0 ? readerText : `${readerText}${ZERO_WIDTH_SPACE}`;
 
-  measurementKeyRef.current = measurementKey;
+  measurementKeyRef.current.key = measurementKey;
 
   const activeLines =
     measurement.key === measurementKey ? measurement.lines : EMPTY_LINES;
@@ -600,6 +601,10 @@ export function App(): React.JSX.Element {
     snapshot && pages.length > 0
       ? clampPageIndex(snapshot.pageIndex, pages.length)
       : 0;
+  if (measurementReady && pages.length > 0) {
+    measurementKeyRef.current.pageNumber = effectivePageIndex + 1;
+  }
+  const displayedPageNumber = measurementKeyRef.current.pageNumber;
   const isChoicePage =
     measurementReady &&
     !snapshot?.isEnded &&
@@ -763,7 +768,7 @@ export function App(): React.JSX.Element {
     callbackKey: string,
     lines: readonly string[],
   ) => {
-    if (measurementKeyRef.current !== callbackKey || lines.length === 0) {
+    if (measurementKeyRef.current.key !== callbackKey || lines.length === 0) {
       return;
     }
 
@@ -1593,7 +1598,7 @@ export function App(): React.JSX.Element {
                   </Pressable>
 
                   <Text style={[styles.pageCounter, {color: readerPalette.muted}]}>
-                    {effectivePageIndex + 1}
+                    {displayedPageNumber}
                   </Text>
 
                   <Pressable
