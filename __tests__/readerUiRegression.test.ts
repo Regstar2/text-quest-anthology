@@ -39,12 +39,28 @@ describe('v0.1.8 reader UI regressions', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
     expect(app).not.toContain('fallbackPageParagraphs');
-    expect(app).toContain("top: -10000");
+    expect(app).toContain('top: -10000');
     expect(app).toContain("color: 'transparent'");
     expect(app).toContain('collapsable={false}');
     expect(app).toContain('key={`reader-page-${measurementKey}-${effectivePageIndex}`}');
-    expect(app).toContain(
-      "{measurementReady ? `${effectivePageIndex + 1}/${pages.length}` : '…'}",
-    );
+  });
+
+  test('reader footer shows one continuous page number without block totals or ellipsis', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).toContain('const [pageNumber, setPageNumber] = useState(1);');
+    expect(app).toContain('{pageNumber}');
+    expect(app).not.toContain('`${effectivePageIndex + 1}/${pages.length}`');
+    expect(app).not.toContain("readerPalette.muted}]}>\n                    …");
+  });
+
+  test('ending restart acts directly and ending labels expose number plus name', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).toContain('setMenuView(null);\n    const session = sessionRef.current;');
+    expect(app).toContain('void restartActiveStory();');
+    expect(app).toContain('formatEndingDisplay(snapshot.endingId)');
+    expect(app).toContain('formatEndingDisplay(ending.id)');
+    expect(app).toContain('`${UI_STRINGS.endingLabel} №${number}${name ? ` · ${name}` : \'\'}`');
   });
 });
