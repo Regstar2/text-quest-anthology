@@ -7,7 +7,6 @@ export type StoryMetadata = Readonly<{
   title: string;
   description: string;
   cover: string;
-  endingCount: number;
 }>;
 
 export type StoryAssetPaths = Readonly<{
