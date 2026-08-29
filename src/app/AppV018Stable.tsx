@@ -571,10 +571,6 @@ export function App(): React.JSX.Element {
         .join('\n'),
     [readerParagraphs],
   );
-  const fallbackPageParagraphs = useMemo(
-    () => splitParagraphs(snapshot?.text ?? '').map(indentParagraph),
-    [snapshot?.text],
-  );
   const measurementKey = `${readerRevision}\u0000${readerText}`;
   const measurementText =
     readerRevision % 2 === 0 ? readerText : `${readerText}${ZERO_WIDTH_SPACE}`;
@@ -613,8 +609,8 @@ export function App(): React.JSX.Element {
     () =>
       measurementReady
         ? pageLinesToParagraphs(pages[effectivePageIndex] ?? EMPTY_LINES)
-        : fallbackPageParagraphs,
-    [effectivePageIndex, fallbackPageParagraphs, measurementReady, pages],
+        : [],
+    [effectivePageIndex, measurementReady, pages],
   );
   const showReaderBanner =
     screen === 'reader' &&
@@ -1495,6 +1491,8 @@ export function App(): React.JSX.Element {
             {readerMode === 'pages' ? (
               <View style={styles.pageReaderContent}>
                 <View
+                  collapsable={false}
+                  key={measurementKey}
                   onLayout={(event: LayoutChangeEvent) => {
                     setPageHeight(event.nativeEvent.layout.height);
                   }}
@@ -1508,12 +1506,14 @@ export function App(): React.JSX.Element {
                       );
                     }}
                     pointerEvents="none"
-                    style={[styles.measureText, {color: readerPalette.text}]}>
+                    style={styles.measureText}>
                     {measurementText}
                   </Text>
 
                   <View
                     {...pagePanResponder.panHandlers}
+                    collapsable={false}
+                    key={`reader-page-${measurementKey}-${effectivePageIndex}`}
                     style={[
                       styles.pageTextArea,
                       isInteractionPage && {
@@ -1522,7 +1522,7 @@ export function App(): React.JSX.Element {
                     ]}>
                     {visiblePageParagraphs.map((paragraph, index) => (
                       <Text
-                        key={`page-${effectivePageIndex}-${index}`}
+                        key={`page-${readerRevision}-${effectivePageIndex}-${index}`}
                         maxFontSizeMultiplier={1.35}
                         style={[styles.storyParagraph, {color: readerPalette.text}]}>
                         {paragraph}
@@ -1584,7 +1584,7 @@ export function App(): React.JSX.Element {
                   </Pressable>
 
                   <Text style={[styles.pageCounter, {color: readerPalette.muted}]}>
-                    {measurementReady ? `${effectivePageIndex + 1}/${pages.length}` : '1/…'}
+                    {measurementReady ? `${effectivePageIndex + 1}/${pages.length}` : '…'}
                   </Text>
 
                   <Pressable
@@ -2123,8 +2123,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: PAGE_VERTICAL_PADDING / 2,
+    top: -10000,
     opacity: 0,
+    color: 'transparent',
     fontSize: 18,
     lineHeight: STORY_LINE_HEIGHT,
     textAlign: 'justify',
