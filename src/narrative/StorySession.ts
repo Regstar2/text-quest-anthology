@@ -166,7 +166,17 @@ export class StorySession {
     };
   }
 
-  async choose(choiceIndex: number): Promise<StorySessionMutationResult> {
+  async choose(
+    choiceIndex: number,
+    readerPageIndex?: number,
+  ): Promise<StorySessionMutationResult> {
+    if (
+      readerPageIndex !== undefined &&
+      (!Number.isInteger(readerPageIndex) || readerPageIndex < 0)
+    ) {
+      throw new Error('READER_PAGE_INVALID: Page index must be non-negative.');
+    }
+
     const previousChoiceCount = this.currentSnapshot.choices.length;
     this.currentSnapshot = this.runtime.choose(choiceIndex);
     this.currentReaderText = this.currentSnapshot.text;
@@ -178,9 +188,9 @@ export class StorySession {
       );
     }
     this.readerPassages.push(...nextPassages);
-    this.readerPageIndex = this.currentSnapshot.isEnded
-      ? LATEST_READER_PAGE_INDEX
-      : 0;
+    this.readerPageIndex =
+      readerPageIndex ??
+      (this.currentSnapshot.isEnded ? LATEST_READER_PAGE_INDEX : 0);
 
     return {
       snapshot: this.readerSnapshot(),
