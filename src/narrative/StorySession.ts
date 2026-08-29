@@ -167,12 +167,15 @@ export class StorySession {
   }
 
   async choose(choiceIndex: number): Promise<StorySessionMutationResult> {
+    const previousChoiceCount = this.currentSnapshot.choices.length;
     this.currentSnapshot = this.runtime.choose(choiceIndex);
     this.currentReaderText = this.currentSnapshot.text;
     const nextPassages = passagesFromText(this.currentReaderText);
 
     if (this.readerPassages.length > 0 && nextPassages.length > 0) {
-      this.readerPassages.push(READER_PAGE_BREAK_MARKER);
+      this.readerPassages.push(
+        `${READER_PAGE_BREAK_MARKER}:${previousChoiceCount}`,
+      );
     }
     this.readerPassages.push(...nextPassages);
     this.readerPageIndex = this.currentSnapshot.isEnded
