@@ -45,7 +45,11 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('top: -10000');
     expect(app).toContain("color: 'transparent'");
     expect(app).toContain('collapsable={false}');
-    expect(app).toContain('key={`reader-page-${measurementKey}-${effectivePageIndex}`}');
+    expect(app).toContain('key={`reader-page-${measurementKey}`}');
+    expect(app).not.toContain(
+      'key={`reader-page-${measurementKey}-${effectivePageIndex}`}',
+    );
+    expect(app).toContain('key={`page-${readerRevision}-${index}`}');
   });
 
   test('reader cursor drives text, arrows and counter from one page index', () => {
@@ -72,6 +76,20 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('const lastPageNumberRef = useRef(1);');
     expect(app).toContain('lastPageNumberRef.current = effectivePageIndex + 1;');
     expect(app).toContain('const displayedPageNumber = lastPageNumberRef.current;');
+  });
+
+  test('page navigation updates banner visibility before exposing the target page', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+    const bannerUpdate = app.indexOf(
+      'setPageBannerVisible(\n          nextPageOrdinal % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0,',
+    );
+    const cursorUpdate = app.indexOf('setReaderPageIndex(nextPageIndex);');
+    const persistence = app.indexOf('await session.setPage(nextPageIndex);');
+
+    expect(bannerUpdate).toBeGreaterThan(-1);
+    expect(cursorUpdate).toBeGreaterThan(bannerUpdate);
+    expect(persistence).toBeGreaterThan(cursorUpdate);
+    expect(app).toContain('setPageBannerVisible(previousBannerVisible);');
   });
 
   test('hidden native banner collapses its React spacer completely', () => {
