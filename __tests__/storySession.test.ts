@@ -122,6 +122,7 @@ describe('StorySession persistence flow', () => {
     expect(completed.snapshot.isEnded).toBe(true);
     expect(completed.snapshot.endingId).toBe('e12_glass');
     expect(completed.snapshot.text).toContain('Третий удар выбивает стекло');
+    expect(completed.snapshot.pageIndex).toBe(Number.MAX_SAFE_INTEGER);
 
     const stored = await repository.load('zavalinka');
     expect(stored.status).toBe('loaded');
@@ -131,6 +132,7 @@ describe('StorySession persistence flow', () => {
     expect(stored.save.completed).toBe(true);
     expect(stored.save.readerCurrentText).toBe(completed.snapshot.text);
     expect(stored.save.readerPassages).toEqual(completed.snapshot.passages);
+    expect(stored.save.readerPageIndex).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   test('legacy save without reader fields remains loadable', async () => {
