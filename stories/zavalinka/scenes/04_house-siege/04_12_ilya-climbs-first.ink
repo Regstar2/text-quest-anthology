@@ -1,6 +1,7 @@
 === ilya_first ===
 // TODO: fill scene prose from the approved Zavalinka decision map.
-{ !(HATCH_PREPARED || ROPE || TOOLS_READY):
+{
+- not (HATCH_PREPARED || ROPE || TOOLS_READY):
     ~ LERA_ALIVE = false
     -> attic_ilya
 - else:
