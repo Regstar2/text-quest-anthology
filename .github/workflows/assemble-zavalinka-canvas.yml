@@ -27,18 +27,36 @@ jobs:
           New-Item -ItemType Directory -Path $design -Force | Out-Null
 
           @'
+          const crypto = require('node:crypto');
           const fs = require('node:fs');
           const zlib = require('node:zlib');
           const path = require('node:path');
 
           const design = path.join('stories', 'zavalinka', 'design');
+          const expectedPartHashes = [
+            '291adf7371d44867faaae092aef503d6fd161861eb2eedd13a10e04d546934f1',
+            'f2a7957ddf64b0e769669e1dd420177cf69967f79277f603cfb5305db544b688',
+            '9d617e283a0fc7d6e6ffa25feea2fd9a25c661610dfb295795b0d00537859e63',
+            '6820c999874e38fdcc25b4402668bc2a52c595a5c44a63f974c9b471241a1888',
+          ];
           const parts = [0, 1, 2, 3].map(index => {
             const name = `part${String(index).padStart(2, '0')}.b64`;
-            return fs.readFileSync(path.join(design, '.canvas-upload', name), 'utf8').trim();
+            const value = fs.readFileSync(path.join(design, '.canvas-upload', name), 'utf8').trim();
+            const hash = crypto.createHash('sha256').update(value, 'utf8').digest('hex');
+            console.log(`${name}: chars=${value.length} sha256=${hash}`);
+            if (hash !== expectedPartHashes[index]) {
+              throw new Error(`${name} SHA-256 mismatch: ${hash}`);
+            }
+            return value;
           });
           const compressed = Buffer.from(parts.join(''), 'base64');
+          const compressedHash = crypto.createHash('sha256').update(compressed).digest('hex');
+          console.log(`compressed: bytes=${compressed.length} sha256=${compressedHash}`);
           if (compressed.length !== 23289) {
             throw new Error(`Unexpected compressed canvas size: ${compressed.length}`);
+          }
+          if (compressedHash !== '4414809c28e3b87bf825fe021afe3985724ccfd2c6a39b27768b057a9ebcb63d') {
+            throw new Error(`Compressed canvas SHA-256 mismatch: ${compressedHash}`);
           }
           const canvas = zlib.gunzipSync(compressed);
           fs.writeFileSync(path.join(design, 'zavalinka-decision-map.canvas'), canvas);
