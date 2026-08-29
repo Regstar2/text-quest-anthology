@@ -12,15 +12,57 @@ function source(path: string): string {
   return fs.readFileSync(pathModule.join(processModule.cwd(), path), 'utf8');
 }
 
-describe('v0.1.7 architecture gate', () => {
-  test('application navigation does not hardcode Zavalinka as the selected story', () => {
-    const app = source('src/app/App.tsx');
+const APP_PATH = 'src/app/AppV018Stable.tsx';
+
+describe('v0.1.8 architecture gate', () => {
+  test('application entrypoint uses the stable v0.1.8 reader', () => {
+    const entrypoint = source('src/app/App.tsx');
+    expect(entrypoint).toContain("from './AppV018Stable'");
+  });
+
+  test('application navigation remains data-driven and story-agnostic', () => {
+    const app = source(APP_PATH);
 
     expect(app).toContain('storyLoader.listMetadata()');
     expect(app).toContain('storyLoader.load(storyId)');
     expect(app).not.toContain('DEFAULT_STORY');
     expect(app).not.toContain("storyId === 'zavalinka'");
     expect(app).not.toContain('storyId === "zavalinka"');
+  });
+
+  test('reader preferences and ending history stay outside Ink state', () => {
+    const app = source(APP_PATH);
+    const session = source('src/narrative/StorySession.ts');
+
+    expect(app).toContain('readerPreferencesRepository');
+    expect(app).toContain('unlockedEndingsRepository');
+    expect(session).not.toMatch(/ReaderPreferences|UnlockedEndings/i);
+  });
+
+  test('selected theme is shared by the app shell and reader', () => {
+    const app = source(APP_PATH);
+    const strings = source('src/config/uiStrings.ts');
+
+    expect(app).toContain('const appColors: AppColors = readerPalette;');
+    expect(app).toContain('<StatusBar barStyle={readerPalette.statusBar} />');
+    expect(strings).toContain("readerThemeLabel: 'Тема приложения'");
+  });
+
+  test('terminal content stays inside reader navigation instead of a separate ending screen', () => {
+    const app = source(APP_PATH);
+
+    expect(app).toContain('FORCED_PAGE_BREAK_MARKER');
+    expect(app).toContain('isEndingPage');
+    expect(app).toContain('formatEndingProgress(item)');
+    expect(app).not.toContain("screen === 'ending'");
+  });
+
+  test('locked choices are rendered from runtime state without story-specific conditions', () => {
+    const app = source(APP_PATH);
+
+    expect(app).toContain('choice.enabled');
+    expect(app).toContain('🔒');
+    expect(app).not.toMatch(/gas|pipe|чердак|zavalinka/i);
   });
 
   test('narrative and persistence core do not depend on ad or store SDKs', () => {
