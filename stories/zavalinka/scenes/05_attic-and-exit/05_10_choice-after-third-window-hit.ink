@@ -1,7 +1,9 @@
 === d11 ===
 // TODO: fill scene prose from the approved Zavalinka decision map.
-{ ILYA_ALIVE && LERA_ALIVE:
-    { WINDOW_READY:
+{
+- ILYA_ALIVE && LERA_ALIVE:
+    {
+    - WINDOW_READY:
         * [Один удерживает и фиксирует окно, второй сразу открывает противоположный фронтон.]
             ~ WINDOW_SECURED = true
             -> roof_open
