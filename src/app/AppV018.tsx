@@ -132,34 +132,7 @@ export function App(): React.JSX.Element {
 
   const readerPalette = resolveReaderPalette(readerPreferences.theme, systemDark);
   const readerMode = readerPreferences.mode;
-  const isReaderScreen = screen === 'reader' || screen === 'ending';
-  const appColors = useMemo(
-    () =>
-      systemDark
-        ? {
-            background: '#111111',
-            surface: '#181818',
-            surfaceMuted: '#242424',
-            text: '#f2f2f2',
-            muted: '#b7b7b7',
-            border: '#3c3c3c',
-            primary: '#f0f0f0',
-            primaryText: '#111111',
-            danger: '#e05858',
-          }
-        : {
-            background: '#f8f8f7',
-            surface: '#ffffff',
-            surfaceMuted: '#ededeb',
-            text: '#171717',
-            muted: '#626262',
-            border: '#d4d4d1',
-            primary: '#171717',
-            primaryText: '#ffffff',
-            danger: '#b3261e',
-          },
-    [systemDark],
-  );
+  const appColors: AppColors = readerPalette;
 
   const resetReaderAdCadence = useCallback((): void => {
     pageOrdinalRef.current = 1;
@@ -1101,25 +1074,15 @@ export function App(): React.JSX.Element {
     </Modal>
   );
 
-  const statusBarStyle = isReaderScreen
-    ? readerPalette.statusBar
-    : systemDark
-      ? 'light-content'
-      : 'dark-content';
-  const safeBackground = isReaderScreen
-    ? readerPalette.background
-    : appColors.background;
+  const statusBarStyle = readerPalette.statusBar;
+  const safeBackground = appColors.background;
 
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={statusBarStyle} />
       <SafeAreaView style={[styles.safeArea, {backgroundColor: safeBackground}]}>
         <AdsBanner
-          isDarkMode={
-            isReaderScreen
-              ? readerPalette.statusBar === 'light-content'
-              : systemDark
-          }
+          isDarkMode={readerPalette.statusBar === 'light-content'}
           visible={showReaderBanner}
         />
 
