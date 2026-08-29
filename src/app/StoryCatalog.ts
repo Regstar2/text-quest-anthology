@@ -103,7 +103,7 @@ export function countStoryEndings(compiledStory: unknown): number {
   let serialized: string;
 
   try {
-    serialized = JSON.stringify(compiledStory);
+    serialized = JSON.stringify(compiledStory) ?? '';
   } catch {
     return 0;
   }
