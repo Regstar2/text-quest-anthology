@@ -43,27 +43,27 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(app).toContain('key={`reader-page-${measurementKey}-${effectivePageIndex}`}');
   });
 
-  test('reader footer uses a logical page number that is independent of layout reflow', () => {
+  test('reader footer derives its number from the actual stable page index', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
-    expect(app).toContain('const [pageNumber, setPageNumber] = useState(1);');
-    expect(app).toContain('{pageNumber}');
-    expect(app).toContain('setPageNumber(previous => previous + 1);');
-    expect(app).toContain('const pageDelta = nextPageIndex - previousPageIndex;');
-    expect(app).toContain(
-      'setPageNumber(previous => Math.max(1, previous + pageDelta));',
-    );
+    expect(app).toContain('{effectivePageIndex + 1}');
+    expect(app).not.toContain('const [pageNumber, setPageNumber] = useState(1);');
+    expect(app).not.toContain('setPageNumber(');
     expect(app).not.toContain('`${effectivePageIndex + 1}/${pages.length}`');
     expect(app).not.toContain("readerPalette.muted}]}>\n                    …");
   });
 
-  test('feed choices advance the logical page number before mode-specific ad cadence', () => {
+  test('page mode reserves banner height so ad visibility cannot repaginate the text', () => {
     const app = source('src/app/AppV018Stable.tsx');
+    const yandexAds = source('src/ads/yandex/YandexAdsProvider.tsx');
 
     expect(app).toMatch(
-      /setNotice\(result\.persisted \? null : UI_STRINGS\.saveFailed\);\s+setPageNumber\(previous => previous \+ 1\);\s+if \(readerMode === 'pages'\)/,
+      /reserveSpace=\{screen === 'reader' && readerMode === 'pages'\}/,
     );
-    expect(app).toContain('setSnapshot({...snapshot, pageIndex: Number.MAX_SAFE_INTEGER});');
+    expect(yandexAds).toContain('reserveSpace = false');
+    expect(yandexAds).toMatch(
+      /canShowNativeBanner && \(visible \|\| reserveSpace\) \? reservedHeight : 0/,
+    );
   });
 
   test('pages mode paginates the accumulated transcript and feed-to-pages opens its end', () => {
