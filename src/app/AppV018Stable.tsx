@@ -20,6 +20,7 @@ import {
   type LayoutChangeEvent,
   type TextLayoutEvent,
   useColorScheme,
+  useWindowDimensions,
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import {adsProvider} from '../ads';
@@ -113,6 +114,7 @@ const EMPTY_MEASUREMENT: ReaderMeasurement = {key: '', lines: EMPTY_LINES};
 
 export function App(): React.JSX.Element {
   const systemDark = useColorScheme() === 'dark';
+  const {height: windowHeight} = useWindowDimensions();
   const sessionRef = useRef<StorySession | null>(null);
   const mutationLockRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
@@ -512,8 +514,10 @@ export function App(): React.JSX.Element {
       return;
     }
 
+    const currentReaderPageIndex =
+      stablePageFrameRef.current?.pageIndex ?? effectivePageIndex;
     const nextReaderPageIndex =
-      readerMode === 'pages' ? effectivePageIndex + 1 : undefined;
+      readerMode === 'pages' ? currentReaderPageIndex + 1 : undefined;
 
     try {
       const result = await session.choose(choiceIndex, nextReaderPageIndex);
@@ -614,7 +618,26 @@ export function App(): React.JSX.Element {
 
   const activeLines =
     measurement.key === measurementKey ? measurement.lines : EMPTY_LINES;
-  const measurementReady = pageHeight > 0 && activeLines.length > 0;
+  const pageBannerActive =
+    screen === 'reader' &&
+    snapshot?.isEnded !== true &&
+    readerMode === 'pages' &&
+    pageBannerVisible;
+  const bannerReservedHeight = Math.min(
+    ADS_CONFIG.bannerLayout.maxHeight,
+    Math.max(
+      ADS_CONFIG.bannerLayout.minHeight,
+      Math.ceil(windowHeight * ADS_CONFIG.bannerLayout.heightRatio),
+    ),
+  );
+  const paginationHeight =
+    pageHeight > 0
+      ? Math.max(
+          STORY_LINE_HEIGHT,
+          pageHeight - (pageBannerActive ? 0 : bannerReservedHeight),
+        )
+      : 0;
+  const measurementReady = paginationHeight > 0 && activeLines.length > 0;
   const choiceReserve = getChoiceReserve(snapshot?.choices.length ?? 0);
   const interactionReserve = snapshot?.isEnded
     ? ENDING_ACTIONS_RESERVE
@@ -622,9 +645,9 @@ export function App(): React.JSX.Element {
   const pages = useMemo(
     () =>
       measurementReady
-        ? paginateLines(activeLines, pageHeight, interactionReserve)
+        ? paginateLines(activeLines, paginationHeight, interactionReserve)
         : [],
-    [activeLines, interactionReserve, measurementReady, pageHeight],
+    [activeLines, interactionReserve, measurementReady, paginationHeight],
   );
   const effectivePageIndex =
     snapshot && pages.length > 0
@@ -642,7 +665,7 @@ export function App(): React.JSX.Element {
   if (pageFrameReady) {
     const pageNumber = effectivePageIndex + 1;
     stablePageFrameRef.current = {
-      key: `${readerRevision}:${effectivePageIndex}:${pageHeight}`,
+      key: `${readerRevision}:${effectivePageIndex}:${paginationHeight}`,
       pageIndex: effectivePageIndex,
       pageNumber,
       paragraphs: resolvedPageParagraphs,
@@ -667,9 +690,10 @@ export function App(): React.JSX.Element {
     effectivePageIndex === pages.length - 1;
   const isInteractionPage = isChoicePage || isEndingPage;
   const showReaderBanner =
-    screen === 'reader' &&
     snapshot?.isEnded !== true &&
-    (readerMode === 'pages' ? pageBannerVisible : feedBannerVisible);
+    (readerMode === 'pages'
+      ? pageBannerActive
+      : screen === 'reader' && feedBannerVisible);
   const isBusy = isLoading || isMutating;
 
   const moveToPage = useCallback(
