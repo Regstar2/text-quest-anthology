@@ -1625,14 +1625,16 @@ export function App(): React.JSX.Element {
                 contentContainerStyle={styles.readerContent}
                 style={styles.readerScroll}>
                 <View style={styles.feedText}>
-                  {snapshot.passages.map((passage, index) => (
-                    <Text
-                      key={`${index}-${passage.slice(0, 24)}`}
-                      maxFontSizeMultiplier={1.35}
-                      style={[styles.storyParagraph, {color: readerPalette.text}]}>
-                      {indentParagraph(passage)}
-                    </Text>
-                  ))}
+                  {snapshot.passages
+                    .filter(passage => passage !== FORCED_PAGE_BREAK_MARKER)
+                    .map((passage, index) => (
+                      <Text
+                        key={`${index}-${passage.slice(0, 24)}`}
+                        maxFontSizeMultiplier={1.35}
+                        style={[styles.storyParagraph, {color: readerPalette.text}]}>
+                        {indentParagraph(passage)}
+                      </Text>
+                    ))}
                 </View>
                 {snapshot.isEnded ? renderEndingActions() : renderChoices(true)}
               </ScrollView>
@@ -1777,8 +1779,12 @@ function buildReaderParagraphs(
     .map(passage => passage.trim())
     .filter(passage => passage.length > 0);
 
-  if (!snapshot.isEnded) {
-    return passages.length > 0 ? passages : splitParagraphs(snapshot.text);
+  if (passages.length === 0) {
+    return splitParagraphs(snapshot.text);
+  }
+
+  if (!snapshot.isEnded || passages.includes(FORCED_PAGE_BREAK_MARKER)) {
+    return passages;
   }
 
   const current = splitParagraphs(snapshot.text);
@@ -1889,32 +1895,32 @@ function paginateLines(
     measuredNormalCapacity - PAGINATION_SAFETY_LINES,
   );
 
-  const forcedBreakIndex = measuredLines.findIndex(line =>
-    line.includes(FORCED_PAGE_BREAK_MARKER),
-  );
+  const pages: string[][] = [];
+  let segmentStart = 0;
 
-  if (forcedBreakIndex >= 0) {
-    const beforeBreak = measuredLines.slice(0, forcedBreakIndex);
-    const afterBreak = measuredLines.slice(forcedBreakIndex + 1);
-    return [
-      ...(beforeBreak.length > 0
-        ? chunkLines(beforeBreak, normalCapacity)
-        : []),
-      ...paginateTail(
-        afterBreak,
-        contentHeight,
-        normalCapacity,
-        interactionReserve,
-      ),
-    ];
+  for (let index = 0; index < measuredLines.length; index += 1) {
+    if (!measuredLines[index].includes(FORCED_PAGE_BREAK_MARKER)) {
+      continue;
+    }
+
+    const segment = measuredLines.slice(segmentStart, index);
+    if (segment.length > 0) {
+      pages.push(...chunkLines(segment, normalCapacity));
+    }
+    segmentStart = index + 1;
   }
 
-  return paginateTail(
-    measuredLines,
-    contentHeight,
-    normalCapacity,
-    interactionReserve,
+  const tail = measuredLines.slice(segmentStart);
+  pages.push(
+    ...paginateTail(
+      tail,
+      contentHeight,
+      normalCapacity,
+      interactionReserve,
+    ),
   );
+
+  return pages.length > 0 ? pages : [[]];
 }
 
 function paginateTail(
