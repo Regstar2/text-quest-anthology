@@ -66,11 +66,25 @@ describe('v0.1.8 reader UI regressions', () => {
     );
   });
 
+  test('choices persist page boundaries and page mode handles more than one boundary', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+    const session = source('src/narrative/StorySession.ts');
+
+    expect(session).toContain("export const READER_PAGE_BREAK_MARKER = '\\uE001';");
+    expect(session).toContain('this.readerPassages.push(READER_PAGE_BREAK_MARKER);');
+    expect(app).toContain('let segmentStart = 0;');
+    expect(app).toContain('measuredLines[index].includes(FORCED_PAGE_BREAK_MARKER)');
+    expect(app).toContain(
+      '.filter(passage => passage !== FORCED_PAGE_BREAK_MARKER)',
+    );
+  });
+
   test('pages mode paginates the accumulated transcript and feed-to-pages opens its end', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
     expect(app).toContain('const passages = snapshot.passages');
-    expect(app).toContain('return passages.length > 0 ? passages : splitParagraphs(snapshot.text);');
+    expect(app).toContain('if (passages.length === 0)');
+    expect(app).toContain('return passages;');
     expect(app).toContain('setSnapshot({...snapshot, pageIndex: Number.MAX_SAFE_INTEGER});');
     expect(app).toMatch(
       /readerMode === 'pages' \|\| result\.snapshot\.isEnded\s+\? \{\.\.\.result\.snapshot, pageIndex: Number\.MAX_SAFE_INTEGER\}/,
