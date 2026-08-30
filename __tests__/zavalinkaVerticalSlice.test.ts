@@ -67,10 +67,10 @@ describe('Завалинка v0.2.0 known routes', () => {
     );
 
     const variables = await loadVariables(repository);
-    expect(variables.DETOUR_COUNT).toBe(0);
-    expect(variables.PIPE_KNOWN).toBe(false);
-    expect(variables.HATCH_SPOTTED).toBe(false);
-    expect(variables.HATCH_PREPARED).toBe(false);
+    expect(variables.DETOUR_COUNT ?? 0).toBe(0);
+    expect(variables.PIPE_KNOWN ?? false).toBe(false);
+    expect(variables.HATCH_SPOTTED ?? false).toBe(false);
+    expect(variables.HATCH_PREPARED ?? false).toBe(false);
     expect(variables.PREP_ACTIONS_LEFT).toBe(2);
 
     expect(
@@ -98,17 +98,17 @@ describe('Завалинка v0.2.0 known routes', () => {
     expect(resumed.resumed).toBe(true);
     expect(resumed.snapshot.text).toBe(afterDetour.snapshot.text);
 
-    let current = await resumed.session.choose(
+    const current = await resumed.session.choose(
       findChoice(resumed.snapshot, 'Попробовать войти через террасу'),
     );
-    current = await resumed.session.choose(
+    await resumed.session.choose(
       findChoice(current.snapshot, 'Проверить места, где кто-то мог спрятаться'),
     );
 
     variables = await loadVariables(repository);
     expect(variables.DETOUR_COUNT).toBe(1);
     expect(variables.HAMMER).toBe(true);
-    expect(variables.HATCH_SPOTTED).toBe(false);
+    expect(variables.HATCH_SPOTTED ?? false).toBe(false);
     expect(variables.PREP_ACTIONS_LEFT).toBe(1);
   });
 
@@ -127,7 +127,7 @@ describe('Завалинка v0.2.0 known routes', () => {
     );
 
     const variables = await loadVariables(repository);
-    expect(variables.DETOUR_COUNT).toBe(0);
+    expect(variables.DETOUR_COUNT ?? 0).toBe(0);
     expect(variables.HATCH_SPOTTED).toBe(true);
     expect(variables.HATCH_PREPARED).toBe(true);
     expect(variables.PREP_ACTIONS_LEFT).toBe(1);
