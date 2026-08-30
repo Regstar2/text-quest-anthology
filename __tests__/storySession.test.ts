@@ -107,7 +107,7 @@ describe('StorySession persistence flow', () => {
     );
     expect(pageBreakIndex).toBe(initialPassageCount);
     expect(result.snapshot.passages[pageBreakIndex]).toBe(
-      `${READER_PAGE_BREAK_MARKER}:2`,
+      `${READER_PAGE_BREAK_MARKER}:4`,
     );
     expect(result.snapshot.passages[pageBreakIndex + 1]).toContain(
       'К дому они подошли уже в сумерках',
