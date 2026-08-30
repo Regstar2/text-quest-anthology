@@ -42,8 +42,13 @@ Fixture. # choice-option:0:Закрытый вариант
     throw new Error('Expected inline Ink fixture to compile.');
   }
 
+  const serializedStory = story.ToJson();
+  if (typeof serializedStory !== 'string') {
+    throw new Error('Expected inline Ink fixture to serialize.');
+  }
+
   const runtime = new InkStoryRuntime(
-    JSON.parse(story.ToJson()) as InkStoryContent,
+    JSON.parse(serializedStory) as InkStoryContent,
   );
   return {
     runtime,
