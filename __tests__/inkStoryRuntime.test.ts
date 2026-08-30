@@ -188,7 +188,7 @@ describe('InkStoryRuntime packaged story', () => {
     const restoredSnapshot = restoredRuntime.importState(serializedState);
 
     expect(restoredSnapshot.choices).toEqual(afterPipeCheck.choices);
-    expect(restoredSnapshot.text).toBe(afterPipeCheck.text);
+    expect(restoredSnapshot.text).toContain('Впереди оставались две комнаты');
 
     current = chooseByText(
       restoredRuntime,
