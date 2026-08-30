@@ -49,8 +49,8 @@ describe('StoryLoader', () => {
     );
     const snapshot = runtime.continueToChoiceOrEnd();
 
-    expect(snapshot.choices).toHaveLength(2);
-    expect(snapshot.text).toContain('Ливень начался не сразу');
+    expect(snapshot.choices).toHaveLength(4);
+    expect(snapshot.text).toContain('Дождь начался с редких тяжёлых капель');
   });
 
   test('rejects unknown story ids explicitly', () => {

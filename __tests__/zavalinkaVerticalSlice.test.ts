@@ -33,137 +33,116 @@ function findChoice(snapshot: StoryReaderSnapshot, textStart: string): number {
   return choice.index;
 }
 
-function readBooleanFlag(runtimeState: string, flag: string): boolean {
+function readVariables(runtimeState: string): Record<string, unknown> {
   const parsed = JSON.parse(runtimeState) as {
     variablesState?: Record<string, unknown>;
   };
-  return parsed.variablesState?.[flag] === true;
+  return parsed.variablesState ?? {};
 }
 
-describe('Завалинка vertical slice known routes', () => {
-  test('route A restores early PIPE_KNOWN, exposes its delayed consequence and reaches e7_attic_dawn', async () => {
-    const repository = new StorySaveRepository(new MemoryStorySaveStorage());
-    const opened = await StorySession.open(STORY_PACKAGE, repository);
+async function loadVariables(
+  repository: StorySaveRepository,
+): Promise<Record<string, unknown>> {
+  const saved = await repository.load('zavalinka');
+  expect(saved.status).toBe('loaded');
+  if (saved.status !== 'loaded') {
+    throw new Error('Expected a persisted Zavalinka save.');
+  }
+  return readVariables(saved.save.runtimeState);
+}
 
-    const afterPipeCheck = await opened.session.choose(
-      findChoice(opened.snapshot, 'Сначала обойти дом'),
-    );
-
-    const savedAfterFlag = await repository.load('zavalinka');
-    expect(savedAfterFlag.status).toBe('loaded');
-    if (savedAfterFlag.status !== 'loaded') {
-      throw new Error('Expected save after early flag-setting choice.');
-    }
-    expect(
-      readBooleanFlag(savedAfterFlag.save.runtimeState, 'PIPE_KNOWN'),
-    ).toBe(true);
-
-    const resumedAfterFlag = await StorySession.open(STORY_PACKAGE, repository);
-    expect(resumedAfterFlag.resumed).toBe(true);
-    expect(resumedAfterFlag.snapshot.text).toBe(afterPipeCheck.snapshot.text);
-
-    let current = await resumedAfterFlag.session.choose(
-      findChoice(resumedAfterFlag.snapshot, 'Осмотреть дом тщательно'),
-    );
-    current = await resumedAfterFlag.session.choose(
-      findChoice(current.snapshot, 'Укрепить вход'),
-    );
-
-    expect(
-      current.snapshot.choices.some(
-        choice =>
-          choice.enabled && choice.text.startsWith('Не подходить к окну'),
-      ),
-    ).toBe(true);
-
-    current = await resumedAfterFlag.session.choose(
-      findChoice(current.snapshot, 'Не подходить к окну'),
-    );
-
-    const savedBeforeConsequence = await repository.load('zavalinka');
-    expect(savedBeforeConsequence.status).toBe('loaded');
-    if (savedBeforeConsequence.status !== 'loaded') {
-      throw new Error('Expected save before delayed attic consequence.');
-    }
-    expect(
-      readBooleanFlag(savedBeforeConsequence.save.runtimeState, 'PIPE_KNOWN'),
-    ).toBe(true);
-    expect(
-      readBooleanFlag(savedBeforeConsequence.save.runtimeState, 'BARRICADE'),
-    ).toBe(true);
-
-    const resumedBeforeConsequence = await StorySession.open(
-      STORY_PACKAGE,
-      repository,
-    );
-    expect(resumedBeforeConsequence.resumed).toBe(true);
-    expect(
-      resumedBeforeConsequence.snapshot.choices.some(
-        choice =>
-          choice.enabled &&
-          choice.text.startsWith('Сразу заблокировать маленькое окно'),
-      ),
-    ).toBe(true);
-
-    const completed = await resumedBeforeConsequence.session.choose(
-      findChoice(
-        resumedBeforeConsequence.snapshot,
-        'Сразу заблокировать маленькое окно',
-      ),
-    );
-
-    expect(completed.snapshot.isEnded).toBe(true);
-    expect(completed.snapshot.endingId).toBe('e7_attic_dawn');
-
-    const completedSave = await repository.load('zavalinka');
-    expect(completedSave.status).toBe('loaded');
-    if (completedSave.status !== 'loaded') {
-      throw new Error('Expected completed route A save.');
-    }
-    expect(
-      readBooleanFlag(completedSave.save.runtimeState, 'WINDOW_SECURED'),
-    ).toBe(true);
-  });
-
-  test('route B keeps PIPE_KNOWN false, shows the delayed pipe action as disabled and reaches e12_glass', async () => {
+describe('Завалинка v0.2.0 known routes', () => {
+  test('canonical route reaches preparation after a normal house inspection', async () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
     const opened = await StorySession.open(STORY_PACKAGE, repository);
 
     let current = await opened.session.choose(
-      findChoice(opened.snapshot, 'Зайти в дом сразу'),
+      findChoice(opened.snapshot, 'Пока не стемнело, идти к дому'),
     );
     current = await opened.session.choose(
-      findChoice(current.snapshot, 'Осмотреть дом тщательно'),
+      findChoice(current.snapshot, 'Попробовать войти через террасу'),
     );
     current = await opened.session.choose(
-      findChoice(current.snapshot, 'Укрепить вход'),
-    );
-    current = await opened.session.choose(
-      findChoice(current.snapshot, 'Не подходить к окну'),
+      findChoice(current.snapshot, 'Проверить места, где кто-то мог спрятаться'),
     );
 
-    const saved = await repository.load('zavalinka');
-    expect(saved.status).toBe('loaded');
-    if (saved.status !== 'loaded') {
-      throw new Error('Expected route B save.');
-    }
-    expect(readBooleanFlag(saved.save.runtimeState, 'PIPE_KNOWN')).toBe(false);
+    const variables = await loadVariables(repository);
+    expect(variables.DETOUR_COUNT ?? 0).toBe(0);
+    expect(variables.PIPE_KNOWN ?? false).toBe(false);
+    expect(variables.HATCH_SPOTTED ?? false).toBe(false);
+    expect(variables.HATCH_PREPARED ?? false).toBe(false);
+    expect(variables.PREP_ACTIONS_LEFT).toBe(2);
+
     expect(
-      current.snapshot.choices.find(choice =>
-        choice.text.startsWith('Сразу заблокировать маленькое окно'),
+      current.snapshot.choices.some(
+        choice =>
+          choice.enabled &&
+          choice.text.startsWith('Найти и заранее подготовить люк'),
       ),
-    ).toEqual(
-      expect.objectContaining({
-        enabled: false,
-        index: -1,
-      }),
+    ).toBe(true);
+  });
+
+  test('early open-door detour persists HAMMER and reduces preparation time', async () => {
+    const repository = new StorySaveRepository(new MemoryStorySaveStorage());
+    const opened = await StorySession.open(STORY_PACKAGE, repository);
+
+    const afterDetour = await opened.session.choose(
+      findChoice(opened.snapshot, 'Заглянуть в дом с открытой задней дверью'),
     );
 
-    const completed = await opened.session.choose(
-      findChoice(current.snapshot, 'Остаться у люка'),
+    let variables = await loadVariables(repository);
+    expect(variables.DETOUR_COUNT).toBe(1);
+    expect(variables.HAMMER).toBe(true);
+
+    const resumed = await StorySession.open(STORY_PACKAGE, repository);
+    expect(resumed.resumed).toBe(true);
+    expect(resumed.snapshot.text).toBe(afterDetour.snapshot.text);
+
+    const current = await resumed.session.choose(
+      findChoice(resumed.snapshot, 'Попробовать войти через террасу'),
+    );
+    await resumed.session.choose(
+      findChoice(current.snapshot, 'Проверить места, где кто-то мог спрятаться'),
     );
 
-    expect(completed.snapshot.isEnded).toBe(true);
-    expect(completed.snapshot.endingId).toBe('e12_glass');
+    variables = await loadVariables(repository);
+    expect(variables.DETOUR_COUNT).toBe(1);
+    expect(variables.HAMMER).toBe(true);
+    expect(variables.HATCH_SPOTTED ?? false).toBe(false);
+    expect(variables.PREP_ACTIONS_LEFT).toBe(1);
+  });
+
+  test('thorough inspection prepares the hatch and changes later preparation choices', async () => {
+    const repository = new StorySaveRepository(new MemoryStorySaveStorage());
+    const opened = await StorySession.open(STORY_PACKAGE, repository);
+
+    let current = await opened.session.choose(
+      findChoice(opened.snapshot, 'Пока не стемнело, идти к дому'),
+    );
+    current = await opened.session.choose(
+      findChoice(current.snapshot, 'Попробовать войти через террасу'),
+    );
+    current = await opened.session.choose(
+      findChoice(current.snapshot, 'Не торопиться и осмотреть дом сверху донизу'),
+    );
+
+    const variables = await loadVariables(repository);
+    expect(variables.DETOUR_COUNT ?? 0).toBe(0);
+    expect(variables.HATCH_SPOTTED).toBe(true);
+    expect(variables.HATCH_PREPARED).toBe(true);
+    expect(variables.PREP_ACTIONS_LEFT).toBe(1);
+
+    expect(
+      current.snapshot.choices.some(choice =>
+        choice.text.startsWith('Найти и заранее подготовить люк'),
+      ),
+    ).toBe(false);
+    expect(
+      current.snapshot.choices.some(
+        choice =>
+          choice.enabled &&
+          choice.text.startsWith('Осмотреть чердак и подготовить вещи'),
+      ),
+    ).toBe(true);
   });
 });

@@ -57,6 +57,26 @@ describe('StorySaveRepository', () => {
     });
   });
 
+  test('completed placeholder ending may persist an empty current reader text', async () => {
+    const storage = new MemoryStorySaveStorage();
+    const repository = new StorySaveRepository(storage);
+    const save: StorySave = {
+      ...makeSave('story-a'),
+      completed: true,
+      endingId: 'e9_terrace',
+      readerCurrentText: '',
+      readerPassages: ['Предыдущий фрагмент.'],
+      readerPageIndex: Number.MAX_SAFE_INTEGER,
+    };
+
+    await repository.save('story-a', save);
+
+    await expect(repository.load('story-a')).resolves.toEqual({
+      status: 'loaded',
+      save,
+    });
+  });
+
   test('legacy save without reader fields remains loadable', async () => {
     const storage = new MemoryStorySaveStorage();
     const repository = new StorySaveRepository(storage);

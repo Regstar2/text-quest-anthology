@@ -48,9 +48,9 @@ describe('StorySession persistence flow', () => {
 
     expect(opened.resumed).toBe(false);
     expect(opened.snapshot.pageIndex).toBe(0);
-    expect(opened.snapshot.choices).toHaveLength(2);
-    expect(opened.snapshot.text).toContain('Ливень начался не сразу');
-    expect(opened.snapshot.text).toContain('маленький Г-образный дом');
+    expect(opened.snapshot.choices).toHaveLength(4);
+    expect(opened.snapshot.text).toContain('Дождь начался с редких тяжёлых капель');
+    expect(opened.snapshot.text).toContain('целые стёкла');
   });
 
   test('page index and full current text survive cold resume', async () => {
@@ -92,14 +92,14 @@ describe('StorySession persistence flow', () => {
     const initialPassageCount = opened.snapshot.passages.length;
 
     const result = await opened.session.choose(
-      findChoice(opened.snapshot, 'Зайти в дом сразу'),
+      findChoice(opened.snapshot, 'Пока не стемнело, идти к дому'),
     );
 
     expect(result.persisted).toBe(true);
     expect(result.snapshot.pageIndex).toBe(0);
     expect(result.snapshot.isEnded).toBe(false);
     expect(result.snapshot.choices).toHaveLength(2);
-    expect(result.snapshot.text).toContain('Внутри тихо');
+    expect(result.snapshot.text).toContain('К дому они подошли уже в сумерках');
     expect(result.snapshot.passages.length).toBeGreaterThan(initialPassageCount);
 
     const pageBreakIndex = result.snapshot.passages.findIndex(passage =>
@@ -107,9 +107,11 @@ describe('StorySession persistence flow', () => {
     );
     expect(pageBreakIndex).toBe(initialPassageCount);
     expect(result.snapshot.passages[pageBreakIndex]).toBe(
-      `${READER_PAGE_BREAK_MARKER}:2`,
+      `${READER_PAGE_BREAK_MARKER}:4`,
     );
-    expect(result.snapshot.passages[pageBreakIndex + 1]).toContain('Внутри тихо');
+    expect(result.snapshot.passages[pageBreakIndex + 1]).toContain(
+      'К дому они подошли уже в сумерках',
+    );
   });
 
   test('terminal choice autosaves ending, current text and transcript', async () => {
@@ -117,24 +119,29 @@ describe('StorySession persistence flow', () => {
     const opened = await StorySession.open(STORY_PACKAGE, repository);
 
     let current = await opened.session.choose(
-      findChoice(opened.snapshot, 'Зайти в дом сразу'),
+      findChoice(opened.snapshot, 'Пока не стемнело, идти к дому'),
     );
     current = await opened.session.choose(
-      findChoice(current.snapshot, 'Осмотреть дом тщательно'),
+      findChoice(current.snapshot, 'Попробовать войти через террасу'),
     );
     current = await opened.session.choose(
-      findChoice(current.snapshot, 'Укрепить вход'),
+      findChoice(current.snapshot, 'Не торопиться и осмотреть дом сверху донизу'),
     );
     current = await opened.session.choose(
-      findChoice(current.snapshot, 'Не подходить к окну'),
+      findChoice(current.snapshot, 'Укрепить низкое окно и дверь террасы'),
+    );
+    current = await opened.session.choose(
+      findChoice(current.snapshot, 'Лера дежурит первой'),
+    );
+    current = await opened.session.choose(
+      findChoice(current.snapshot, 'Приоткрыть ткань и посмотреть наружу'),
     );
     const completed = await opened.session.choose(
-      findChoice(current.snapshot, 'Остаться у люка'),
+      findChoice(current.snapshot, 'Рвануть к террасе'),
     );
 
     expect(completed.snapshot.isEnded).toBe(true);
-    expect(completed.snapshot.endingId).toBe('e12_glass');
-    expect(completed.snapshot.text).toContain('Третий удар выбивает стекло');
+    expect(completed.snapshot.endingId).toBe('e9_terrace');
     expect(completed.snapshot.pageIndex).toBe(Number.MAX_SAFE_INTEGER);
     expect(
       completed.snapshot.passages.filter(passage =>
@@ -148,6 +155,7 @@ describe('StorySession persistence flow', () => {
       throw new Error('Expected autosaved terminal state.');
     }
     expect(stored.save.completed).toBe(true);
+    expect(stored.save.endingId).toBe('e9_terrace');
     expect(stored.save.readerCurrentText).toBe(completed.snapshot.text);
     expect(stored.save.readerPassages).toEqual(completed.snapshot.passages);
     expect(stored.save.readerPageIndex).toBe(Number.MAX_SAFE_INTEGER);
@@ -178,7 +186,7 @@ describe('StorySession persistence flow', () => {
     const restored = await StorySession.open(STORY_PACKAGE, repository);
     expect(restored.resumed).toBe(true);
     expect(restored.snapshot.pageIndex).toBe(0);
-    expect(restored.snapshot.choices).toHaveLength(2);
+    expect(restored.snapshot.choices).toHaveLength(4);
   });
 
   test('corrupted Ink payload is reset instead of causing a crash loop', async () => {
@@ -227,14 +235,16 @@ describe('StorySession persistence flow', () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
     const opened = await StorySession.open(STORY_PACKAGE, repository);
     await opened.session.setPage(2);
-    await opened.session.choose(findChoice(opened.snapshot, 'Зайти в дом сразу'));
+    await opened.session.choose(
+      findChoice(opened.snapshot, 'Пока не стемнело, идти к дому'),
+    );
 
     const restarted = await opened.session.restart();
     expect(restarted.persisted).toBe(true);
     expect(restarted.snapshot.pageIndex).toBe(0);
     expect(restarted.snapshot.isEnded).toBe(false);
-    expect(restarted.snapshot.choices).toHaveLength(2);
-    expect(restarted.snapshot.text).toContain('Ливень начался не сразу');
+    expect(restarted.snapshot.choices).toHaveLength(4);
+    expect(restarted.snapshot.text).toContain('Дождь начался с редких тяжёлых капель');
     expect(
       restarted.snapshot.passages.some(passage =>
         passage.startsWith(READER_PAGE_BREAK_MARKER),

@@ -115,7 +115,7 @@ function isStorySave(value: unknown): value is StorySave {
 }
 
 function isOptionalText(value: unknown): value is string | undefined {
-  return value === undefined || (typeof value === 'string' && value.length > 0);
+  return value === undefined || typeof value === 'string';
 }
 
 function isReaderPassages(value: unknown): value is readonly string[] | undefined {
