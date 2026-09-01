@@ -1,6 +1,6 @@
 === d8 ===
 // TODO: fill scene prose from the approved Zavalinka decision map.
-* [Оставить нож в ране, ударить ногой и бежать к люку.]
+* [Оставить нож в ране, ударить ногой и отступать в глубину дома.]
     ~ KNIFE_AVAILABLE = false
     -> hatch_race
 * [Потратить секунду и выдернуть нож.]
