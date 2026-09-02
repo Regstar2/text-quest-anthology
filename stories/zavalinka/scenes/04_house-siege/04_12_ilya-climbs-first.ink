@@ -200,7 +200,7 @@
 //   подъёма определён: Илья идёт первым. Точное число противников и дальнейшая ситуация на чердаке
 //   неизвестны.
 // - Что герой может иметь: KNIFE_AVAILABLE может быть true или false; ROPE может быть true или false;
-//   HAMMER может быть true or false; TOOLS_READY может быть true or false. Эти предметы / подготовка
+//   HAMMER может быть true или false; TOOLS_READY может быть true или false. Эти предметы / подготовка
 //   учитываются только в уже существующих runtime-условиях и физической continuity.
 // - Значимые runtime-состояния: LERA_AT_HATCH_FIRST = false; ILYA_ALIVE = true; LERA_ALIVE = true;
 //   BITE_LERA = false; HATCH_PREPARED может быть true/false; ROPE может быть true/false;
