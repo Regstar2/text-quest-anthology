@@ -9,7 +9,7 @@
 //   `window_blocked`, `roof_open`, `window_canon` и их реальные рёбра; Issue #38; state.ink; story.ink;
 //   05_attic-and-exit/main.ink; непосредственный predecessor `pipe_preblock`; входной router `attic_route`;
 //   реальные attic-входы `attic_both`, `attic_lera`, `attic_ilya`; следующие knots `hatch_down`,
-//   `window_canon`, `window_blocked`, `roof_open`; production 05_01 и 05_02 для текущей continuity;
+//   `window_canon`, `window_blocked`, `roof_open`; production 05_01, 05_02 и 05_03 для текущей continuity;
 //   SCENE_AUTHORING_TEMPLATE.md; ai-text-signs-full-511.md; актуальные правила Regstar2/template@main.
 //
 // ДОСТОВЕРНОСТЬ:
@@ -36,7 +36,7 @@
 //   для быстрого открытия только позднее, после третьего удара по незащищённому окну.
 // - FACT: проверка люка до контакта не является мгновенной смертью. В `hatch_down` обнаруживается медленный
 //   мертвец на кровати под люком; при одном живом проверка съедает запас времени, при двух второй следит за трубой.
-// - FACT: production 05_01 и 05_02 уже заканчиваются переводом внимания живых героев к маленькому
+// - FACT: production 05_01, 05_02 и 05_03 уже заканчиваются переводом внимания живого героя/героев к маленькому
 //   торцевому окну; `attic_route` затем только маршрутизирует по `PIPE_KNOWN`.
 // - FACT: 05_05 имеет AUTHORING BRIEF, но художественный текст ещё не написан. Его утверждённая функция —
 //   применить прежнее знание трубы к нынешней уязвимости и закончиться на пороге существующего choice `d11_pre`.
@@ -106,7 +106,8 @@
 // - Реальные варианты входа до router:
 //   1. `attic_both -> attic_route -> pipe_preblock -> d11_pre`: Илья и Лера живы; укусы и предметы могут различаться.
 //   2. `attic_lera -> attic_route -> pipe_preblock -> d11_pre`: Илья погиб; Лера одна.
-//   3. `attic_ilya -> attic_route -> pipe_preblock -> d11_pre`: Лера погибла; Илья один.
+//   3. `attic_ilya -> attic_route -> pipe_preblock -> d11_pre`: Лера погибла; Илья один; current production 05_03
+//      уже заканчивается тем, что Илья переводит взгляд на маленькое торцевое окно перед `-> attic_route`.
 //
 // ЦЕЛЬ СЦЕНЫ:
 // - Сюжетная функция: предъявить существующий ранний выбор действий, который стал возможен только потому,
