@@ -4,7 +4,7 @@
 // СЦЕНА:
 // - ID / файл: 05_06_choice-before-attic-window-contact.ink
 // - Knot / stitch: d11_pre
-// - Версия production prose: v0.2.5; подготовлен только AUTHORING BRIEF, художественный текст не написан.
+// - Версия production prose: v0.2.5; AUTHORING BRIEF сохранён, этап заполнения текстом выполнен; отдельный редакторский pass не выполнен.
 // - Источник: zavalinka-original.md; Canvas-узлы `d11_pre`, `pipe_preblock`, `hatch_down`,
 //   `window_blocked`, `roof_open`, `window_canon` и их реальные рёбра; Issue #38; state.ink; story.ink;
 //   05_attic-and-exit/main.ink; непосредственный predecessor `pipe_preblock`; входной router `attic_route`;
@@ -429,6 +429,12 @@
 // - Будущий художественный текст, если он окажется нужен после production 05_05, должен пройти отдельный
 //   литературный pass по ai-text-signs-full-511.md.
 //
+// PRODUCTION PROSE
+
+По маленькому стеклу непрерывно текла вода. За ним пока ничего не двигалось.
+
+Дождь по крыше глушил дальние звуки.
+
 * {ILYA_ALIVE && LERA_ALIVE} [Разделиться: один блокирует основное окно, второй открывает противоположный фронтон.]
     ~ WINDOW_SECURED = true
     -> roof_open
