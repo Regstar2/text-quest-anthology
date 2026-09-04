@@ -4,7 +4,7 @@
 // СЦЕНА:
 // - ID / файл: 05_13_wait-for-dawn-on-attic.ink.
 // - Knot / stitch: o6.
-// - Версия production prose: v0.2.5; художественный текст написан; текущий этап — отдельная литературная редактура.
+// - Версия production prose: v0.2.5; художественный текст написан; отдельный этап `Редактирование` выполнен.
 // - Источник: zavalinka-original.md для канонической географии чердака, поведения Ильи/Леры и общего стиля;
 //   zavalinka-decision-map.canvas, прежде всего узлы window_blocked, o6, roof_open и d12;
 //   Issue #38; state.ink; текущий production prose 05_12_attic-window-secured.ink и
