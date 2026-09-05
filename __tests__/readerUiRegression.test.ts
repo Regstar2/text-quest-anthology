@@ -109,14 +109,16 @@ describe('v0.1.8 reader UI regressions', () => {
     );
   });
 
-  test('page pagination uses the same canonical height with or without a banner', () => {
+  test('page pagination fills the reader height actually available on screen', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
-    expect(app).toContain('useWindowDimensions');
-    expect(app).toContain('const bannerReservedHeight = Math.min(');
-    expect(app).toContain('const paginationHeight =');
+    expect(app).toContain('const paginationHeight = pageHeight;');
+    expect(app).not.toContain('useWindowDimensions');
+    expect(app).not.toContain('bannerReservedHeight');
+    expect(app).not.toContain('PAGINATION_SAFETY_LINES');
+    expect(app).toContain('const normalCapacity = measuredNormalCapacity;');
     expect(app).toContain(
-      'pageHeight - (pageBannerActive ? 0 : bannerReservedHeight)',
+      'const interactionCapacity = measuredInteractionCapacity;',
     );
     expect(app).toContain(
       'paginateLines(activeLines, paginationHeight, interactionReserve)',
