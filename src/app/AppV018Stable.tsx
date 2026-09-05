@@ -20,7 +20,6 @@ import {
   type LayoutChangeEvent,
   type TextLayoutEvent,
   useColorScheme,
-  useWindowDimensions,
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import {adsProvider} from '../ads';
@@ -65,7 +64,6 @@ const AdsBanner = adsProvider.Banner;
 const STORY_LINE_HEIGHT = 28;
 const PAGE_GAP = 12;
 const PAGE_VERTICAL_PADDING = 12;
-const PAGINATION_SAFETY_LINES = 3;
 const MIN_CHOICE_PAGE_LINES = 3;
 const CHOICE_ROW_RESERVE = 78;
 const CHOICE_GAP = 8;
@@ -114,7 +112,6 @@ const EMPTY_MEASUREMENT: ReaderMeasurement = {key: '', lines: EMPTY_LINES};
 
 export function App(): React.JSX.Element {
   const systemDark = useColorScheme() === 'dark';
-  const {height: windowHeight} = useWindowDimensions();
   const sessionRef = useRef<StorySession | null>(null);
   const mutationLockRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
@@ -623,20 +620,7 @@ export function App(): React.JSX.Element {
     snapshot?.isEnded !== true &&
     readerMode === 'pages' &&
     pageBannerVisible;
-  const bannerReservedHeight = Math.min(
-    ADS_CONFIG.bannerLayout.maxHeight,
-    Math.max(
-      ADS_CONFIG.bannerLayout.minHeight,
-      Math.ceil(windowHeight * ADS_CONFIG.bannerLayout.heightRatio),
-    ),
-  );
-  const paginationHeight =
-    pageHeight > 0
-      ? Math.max(
-          STORY_LINE_HEIGHT,
-          pageHeight - (pageBannerActive ? 0 : bannerReservedHeight),
-        )
-      : 0;
+  const paginationHeight = pageHeight;
   const measurementReady = paginationHeight > 0 && activeLines.length > 0;
   const choiceReserve = getChoiceReserve(snapshot?.choices.length ?? 0);
   const interactionReserve = snapshot?.isEnded
@@ -2022,10 +2006,7 @@ function paginateLines(
     1,
     Math.floor(contentHeight / STORY_LINE_HEIGHT),
   );
-  const normalCapacity = Math.max(
-    1,
-    measuredNormalCapacity - PAGINATION_SAFETY_LINES,
-  );
+  const normalCapacity = measuredNormalCapacity;
 
   const pages: string[][] = [];
   let segmentStart = 0;
@@ -2082,10 +2063,7 @@ function paginateTail(
       (contentHeight - interactionReserve - PAGE_GAP) / STORY_LINE_HEIGHT,
     ),
   );
-  const interactionCapacity = Math.max(
-    1,
-    measuredInteractionCapacity - PAGINATION_SAFETY_LINES,
-  );
+  const interactionCapacity = measuredInteractionCapacity;
   const minimumInteractionLines = Math.min(
     measuredLines.length,
     interactionCapacity,
