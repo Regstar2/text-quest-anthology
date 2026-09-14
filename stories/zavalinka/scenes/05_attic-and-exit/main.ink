@@ -16,3 +16,6 @@ INCLUDE scenes/05_attic-and-exit/05_13a_wait-for-dawn-both-alive.ink
 INCLUDE scenes/05_attic-and-exit/05_13b_wait-for-dawn-lera-alone.ink
 INCLUDE scenes/05_attic-and-exit/05_13c_wait-for-dawn-ilya-alone.ink
 INCLUDE scenes/05_attic-and-exit/05_14_open-opposite-gable-exit.ink
+INCLUDE scenes/05_attic-and-exit/05_14a_open-opposite-gable-both-alive.ink
+INCLUDE scenes/05_attic-and-exit/05_14b_open-opposite-gable-lera-alone.ink
+INCLUDE scenes/05_attic-and-exit/05_14c_open-opposite-gable-ilya-alone.ink
