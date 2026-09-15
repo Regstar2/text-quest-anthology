@@ -560,6 +560,24 @@ export function App(): React.JSX.Element {
     : getChoiceReserve(snapshot?.choices.length ?? 0);
 
   useEffect(() => {
+    if (readerMode !== 'pages') {
+      return;
+    }
+
+    setPagedReader(current => {
+      if (!current.geometry) {
+        return current;
+      }
+
+      return updatePagedReaderGeometry(current, {
+        width: current.geometry.width,
+        height: current.geometry.height,
+        fontScale,
+      });
+    });
+  }, [fontScale, readerMode]);
+
+  useEffect(() => {
     if (readerMode !== 'pages' || !snapshot) {
       setPaginationRequest(null);
       return;
