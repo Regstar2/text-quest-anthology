@@ -1,4 +1,5 @@
 import {
+  FORCED_PAGE_BREAK_MARKER,
   commitPaginationMeasurement,
   createPagedReaderState,
   getChoiceReserve,
@@ -48,7 +49,7 @@ describe('deterministic paged reader model', () => {
 
     const nextPassages = [
       ...firstPassages,
-      '\uE001:2',
+      `${FORCED_PAGE_BREAK_MARKER}:2`,
       'Новая сцена после выбора.',
       'Продолжение новой сцены.',
     ];
@@ -59,6 +60,7 @@ describe('deterministic paged reader model', () => {
     );
     expect(request?.kind).toBe('append');
     expect(request?.startPassageIndex).toBe(firstPassages.length);
+    expect(request?.text).not.toContain(FORCED_PAGE_BREAK_MARKER);
     if (!request) {
       throw new Error('Expected append pagination request.');
     }
@@ -74,6 +76,46 @@ describe('deterministic paged reader model', () => {
     );
     expect(committed.currentPageIndex).toBe(initial.pages.length);
     expect(committed.processedPassageCount).toBe(nextPassages.length);
+    expect(committed.pages[committed.currentPageIndex].paragraphs.join(' ')).toContain(
+      'Новая сцена после выбора.',
+    );
+  });
+
+  test('forced page markers are restored after native text measurement', () => {
+    let state = updatePagedReaderGeometry(createPagedReaderState(), geometry);
+    const passages = [
+      'Первая сцена.',
+      `${FORCED_PAGE_BREAK_MARKER}:1`,
+      'Вторая сцена.',
+    ];
+    const request = planPaginationMeasurement(state, passages, 0);
+    if (!request) {
+      throw new Error('Expected pagination request.');
+    }
+
+    expect(request.text).not.toContain(FORCED_PAGE_BREAK_MARKER);
+    state = commitPaginationMeasurement(state, request, request.text.split('\n'));
+
+    expect(state.processedPassageCount).toBe(passages.length);
+    expect(state.pages.map(page => page.paragraphs.join(' ')).join(' ')).toContain(
+      'Вторая сцена.',
+    );
+  });
+
+  test('banner reserve reduces only deterministic banner pages', () => {
+    let state = updatePagedReaderGeometry(createPagedReaderState(), geometry);
+    const passages = Array.from({length: 12}, (_, index) => `Строка ${index + 1}.`);
+    const request = planPaginationMeasurement(state, passages, 0, 56, 2);
+    if (!request) {
+      throw new Error('Expected pagination request.');
+    }
+
+    state = commitPaginationMeasurement(state, request, request.text.split('\n'));
+
+    expect(state.pages).toHaveLength(3);
+    expect(state.pages[0].paragraphs).toHaveLength(6);
+    expect(state.pages[1].paragraphs).toHaveLength(4);
+    expect(state.pages[2].paragraphs).toHaveLength(2);
   });
 
   test('real geometry change triggers full pagination and restores semantic position', () => {
