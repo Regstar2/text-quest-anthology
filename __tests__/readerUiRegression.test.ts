@@ -109,6 +109,9 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
       'const pages = Object.freeze([...state.pages, ...measuredPages]);',
     );
     expect(pagination).toContain('processedPassageCount: request.sourcePassageCount,');
+    expect(pagination).toContain('const measurementSources = sources.filter(');
+    expect(pagination).toContain('return insertSyntheticPageBreaks(sources, lines);');
+    expect(pagination).toContain('if (measuredPages.length === 0)');
   });
 
   test('geometry and font-scale changes trigger full pagination with semantic-anchor restoration', () => {
@@ -125,15 +128,23 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(pagination).toContain('compareReaderSemanticAnchors');
   });
 
-  test('banner visibility does not resize committed page geometry', () => {
+  test('banner space exists only on deterministic ad pages without changing canonical geometry', () => {
     const app = source('src/app/AppV018Stable.tsx');
+    const pagination = source('src/app/PagedReaderPagination.ts');
     const yandexAds = source('src/ads/yandex/YandexAdsProvider.tsx');
 
-    expect(app).toContain("const reservePagedBannerSlot = screen === 'reader' && readerMode === 'pages';");
-    expect(app).toContain('styles.pagedBannerSlot, {height: bannerReservedHeight}');
+    expect(app).toContain('const reservePagedBannerSlot = pageBannerActive;');
+    expect(app).toContain('(pageBannerActive ? bannerReservedHeight : 0),');
+    expect(app).toContain('ADS_CONFIG.bannerFrequency.pagesPerBanner,');
     expect(app).toContain(
       '(pagedReader.currentPageIndex + 1) %',
     );
+    expect(app).not.toContain(
+      "const reservePagedBannerSlot = screen === 'reader' && readerMode === 'pages';",
+    );
+    expect(pagination).toContain('bannerReserve: number;');
+    expect(pagination).toContain('pagesPerBanner: number;');
+    expect(pagination).toContain('function getPageBannerReserve(');
     expect(yandexAds).toContain(
       'height: canShowNativeBanner && visible ? reservedHeight : 0,',
     );
@@ -149,7 +160,7 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     );
   });
 
-  test('choices persist page boundaries with their original interaction reserve', () => {
+  test('choices persist page boundaries without exposing control markers to native layout', () => {
     const app = source('src/app/AppV018Stable.tsx');
     const session = source('src/narrative/StorySession.ts');
     const pagination = source('src/app/PagedReaderPagination.ts');
@@ -161,10 +172,11 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(session).toContain(
       '`${READER_PAGE_BREAK_MARKER}:${previousChoiceCount}`',
     );
-    expect(pagination).toContain('let segmentStart = 0;');
+    expect(pagination).toContain('const measurementSources = sources.filter(');
     expect(pagination).toContain(
-      'measuredLines[index].text.includes(FORCED_PAGE_BREAK_MARKER)',
+      'source => !source.text.startsWith(FORCED_PAGE_BREAK_MARKER)',
     );
+    expect(pagination).toContain('return insertSyntheticPageBreaks(sources, lines);');
     expect(pagination).toContain(
       'getPageBreakReserve(measuredLines[index].text)',
     );
