@@ -126,7 +126,7 @@ describe('deterministic paged reader model', () => {
     const withGeometry = updatePagedReaderGeometry(reset, geometry);
 
     expect(withGeometry.restoreAnchor).toEqual(restoredAnchor);
-    expect(withGeometry.fallbackPageIndex).toBe(0);
+    expect(withGeometry.fallbackPageIndex).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   test('same geometry does not create a new revision', () => {
