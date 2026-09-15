@@ -49,6 +49,8 @@ export type PaginationMeasurementRequest = Readonly<{
   sources: readonly ReaderSourcePassage[];
   text: string;
   interactionReserve: number;
+  bannerReserve: number;
+  pagesPerBanner: number;
   restoreAnchor: ReaderSemanticAnchor | null;
   fallbackPageIndex: number;
 }>;
@@ -132,6 +134,8 @@ export function planPaginationMeasurement(
   state: PagedReaderState,
   passages: readonly string[],
   interactionReserve: number,
+  bannerReserve = 0,
+  pagesPerBanner = 0,
 ): PaginationMeasurementRequest | null {
   if (!state.geometry || passages.length === 0) {
     return null;
@@ -159,10 +163,21 @@ export function planPaginationMeasurement(
     return null;
   }
 
+  const measurementSources = sources.filter(
+    source => !source.text.startsWith(FORCED_PAGE_BREAK_MARKER),
+  );
+  if (measurementSources.length === 0) {
+    return null;
+  }
+
   const kind = needsFullPagination ? 'full' : 'append';
-  const text = sources.map(source => measurementPassage(source.text)).join('\n');
+  const text = measurementSources
+    .map(source => measurementPassage(source.text))
+    .join('\n');
+  const normalizedBannerReserve = Math.max(0, bannerReserve);
+  const normalizedPagesPerBanner = Math.max(0, Math.floor(pagesPerBanner));
   const signature = hashText(
-    `${kind}\u0000${state.geometryRevision}\u0000${startPassageIndex}\u0000${passages.length}\u0000${text}`,
+    `${kind}\u0000${state.geometryRevision}\u0000${startPassageIndex}\u0000${passages.length}\u0000${normalizedBannerReserve}\u0000${normalizedPagesPerBanner}\u0000${text}`,
   );
 
   return Object.freeze({
@@ -175,6 +190,8 @@ export function planPaginationMeasurement(
     sources: Object.freeze(sources),
     text,
     interactionReserve: Math.max(0, interactionReserve),
+    bannerReserve: normalizedBannerReserve,
+    pagesPerBanner: normalizedPagesPerBanner,
     restoreAnchor: state.restoreAnchor,
     fallbackPageIndex: state.fallbackPageIndex,
   });
@@ -207,16 +224,19 @@ export function commitPaginationMeasurement(
     measuredLines,
     request.geometry.height,
     request.interactionReserve,
+    request.bannerReserve,
+    request.pagesPerBanner,
     request.geometryRevision,
     pageIndexOffset,
   );
 
+  if (measuredPages.length === 0) {
+    return state;
+  }
+
   if (request.kind === 'append') {
     const pages = Object.freeze([...state.pages, ...measuredPages]);
-    const currentPageIndex =
-      measuredPages.length > 0
-        ? state.pages.length
-        : clampPageIndex(state.currentPageIndex, pages.length);
+    const currentPageIndex = state.pages.length;
 
     return {
       ...state,
@@ -284,9 +304,7 @@ function sameGeometry(
 }
 
 function measurementPassage(passage: string): string {
-  return passage.startsWith(FORCED_PAGE_BREAK_MARKER)
-    ? passage
-    : indentReaderParagraph(passage);
+  return indentReaderParagraph(passage);
 }
 
 function attachSemanticAnchors(
@@ -311,29 +329,6 @@ function attachSemanticAnchors(
 
   for (const rawLine of rawLines) {
     const normalized = normalizeMeasuredLine(rawLine);
-
-    if (normalized.includes(FORCED_PAGE_BREAK_MARKER)) {
-      let breakSource: ReaderSourcePassage | null = null;
-      while (sourceCursor < sources.length) {
-        const source = sources[sourceCursor];
-        sourceCursor += 1;
-        if (source.text.startsWith(FORCED_PAGE_BREAK_MARKER)) {
-          breakSource = source;
-          break;
-        }
-      }
-
-      const anchor = breakSource
-        ? {passageIndex: breakSource.passageIndex, characterOffset: 0}
-        : currentSource
-          ? {passageIndex: currentSource.passageIndex, characterOffset}
-          : {passageIndex: sources[0]?.passageIndex ?? 0, characterOffset: 0};
-      lines.push(Object.freeze({text: normalized, anchor: Object.freeze(anchor)}));
-      currentSource = null;
-      characterOffset = 0;
-      continue;
-    }
-
     const visibleLine = normalized.split(PARAGRAPH_BREAK_MARKER).join('');
     const startsParagraph = visibleLine.startsWith(PARAGRAPH_INDENT);
     if (startsParagraph || currentSource === null) {
@@ -362,7 +357,49 @@ function attachSemanticAnchors(
     }
   }
 
-  return Object.freeze(lines);
+  return insertSyntheticPageBreaks(sources, lines);
+}
+
+function insertSyntheticPageBreaks(
+  sources: readonly ReaderSourcePassage[],
+  measuredLines: readonly AnchoredMeasuredLine[],
+): readonly AnchoredMeasuredLine[] {
+  const breakSources = sources.filter(source =>
+    source.text.startsWith(FORCED_PAGE_BREAK_MARKER),
+  );
+  if (breakSources.length === 0) {
+    return Object.freeze([...measuredLines]);
+  }
+
+  const merged: AnchoredMeasuredLine[] = [];
+  let lineCursor = 0;
+
+  for (const breakSource of breakSources) {
+    while (
+      lineCursor < measuredLines.length &&
+      measuredLines[lineCursor].anchor.passageIndex < breakSource.passageIndex
+    ) {
+      merged.push(measuredLines[lineCursor]);
+      lineCursor += 1;
+    }
+
+    merged.push(
+      Object.freeze({
+        text: breakSource.text,
+        anchor: Object.freeze({
+          passageIndex: breakSource.passageIndex,
+          characterOffset: 0,
+        }),
+      }),
+    );
+  }
+
+  while (lineCursor < measuredLines.length) {
+    merged.push(measuredLines[lineCursor]);
+    lineCursor += 1;
+  }
+
+  return Object.freeze(merged);
 }
 
 function normalizeMeasuredLine(line: string): string {
@@ -377,6 +414,8 @@ function paginateMeasuredLines(
   measuredLines: readonly AnchoredMeasuredLine[],
   pageHeight: number,
   interactionReserve: number,
+  bannerReserve: number,
+  pagesPerBanner: number,
   geometryRevision: number,
   pageIndexOffset: number,
 ): readonly ReaderPhysicalPage[] {
@@ -388,12 +427,9 @@ function paginateMeasuredLines(
     STORY_LINE_HEIGHT,
     pageHeight - PAGE_VERTICAL_PADDING,
   );
-  const normalCapacity = Math.max(
-    1,
-    Math.floor(contentHeight / STORY_LINE_HEIGHT),
-  );
   const chunks: AnchoredMeasuredLine[][] = [];
   let segmentStart = 0;
+  let nextPageIndex = pageIndexOffset;
 
   for (let index = 0; index < measuredLines.length; index += 1) {
     if (!measuredLines[index].text.includes(FORCED_PAGE_BREAK_MARKER)) {
@@ -402,28 +438,31 @@ function paginateMeasuredLines(
 
     const segment = measuredLines.slice(segmentStart, index);
     if (segment.length > 0) {
-      chunks.push(
-        ...paginateTail(
-          segment,
-          contentHeight,
-          normalCapacity,
-          getPageBreakReserve(measuredLines[index].text),
-        ),
+      const segmentPages = paginateTail(
+        segment,
+        contentHeight,
+        getPageBreakReserve(measuredLines[index].text),
+        bannerReserve,
+        pagesPerBanner,
+        nextPageIndex,
       );
+      chunks.push(...segmentPages);
+      nextPageIndex += segmentPages.length;
     }
     segmentStart = index + 1;
   }
 
   const tail = measuredLines.slice(segmentStart);
   if (tail.length > 0) {
-    chunks.push(
-      ...paginateTail(
-        tail,
-        contentHeight,
-        normalCapacity,
-        interactionReserve,
-      ),
+    const tailPages = paginateTail(
+      tail,
+      contentHeight,
+      interactionReserve,
+      bannerReserve,
+      pagesPerBanner,
+      nextPageIndex,
     );
+    chunks.push(...tailPages);
   }
 
   return Object.freeze(
@@ -440,52 +479,104 @@ function paginateMeasuredLines(
 function paginateTail(
   measuredLines: readonly AnchoredMeasuredLine[],
   contentHeight: number,
-  normalCapacity: number,
   interactionReserve: number,
+  bannerReserve: number,
+  pagesPerBanner: number,
+  pageIndexOffset: number,
 ): AnchoredMeasuredLine[][] {
   if (measuredLines.length === 0) {
     return [];
   }
 
-  if (interactionReserve <= 0) {
-    return chunkLines(measuredLines, normalCapacity);
-  }
-
-  const interactionCapacity = Math.max(
-    1,
-    Math.floor(
-      (contentHeight - interactionReserve - PAGE_GAP) / STORY_LINE_HEIGHT,
-    ),
-  );
-  const minimumInteractionLines = Math.min(
-    measuredLines.length,
-    interactionCapacity,
-    MIN_CHOICE_PAGE_LINES,
-  );
   const pages: AnchoredMeasuredLine[][] = [];
   let cursor = 0;
+  let pageIndex = pageIndexOffset;
 
-  while (measuredLines.length - cursor > interactionCapacity) {
-    const remaining = measuredLines.length - cursor;
-    const maximumTake = Math.max(1, remaining - minimumInteractionLines);
-    const take = Math.min(normalCapacity, maximumTake);
-    pages.push(measuredLines.slice(cursor, cursor + take));
-    cursor += take;
+  if (interactionReserve <= 0) {
+    while (cursor < measuredLines.length) {
+      const capacity = getPageLineCapacity(
+        contentHeight,
+        pageIndex,
+        bannerReserve,
+        pagesPerBanner,
+        0,
+      );
+      pages.push(measuredLines.slice(cursor, cursor + capacity));
+      cursor += capacity;
+      pageIndex += 1;
+    }
+    return pages;
   }
 
-  pages.push(measuredLines.slice(cursor));
+  while (cursor < measuredLines.length) {
+    const remaining = measuredLines.length - cursor;
+    const interactionCapacity = getPageLineCapacity(
+      contentHeight,
+      pageIndex,
+      bannerReserve,
+      pagesPerBanner,
+      interactionReserve,
+    );
+
+    if (remaining <= interactionCapacity) {
+      pages.push(measuredLines.slice(cursor));
+      break;
+    }
+
+    const normalCapacity = getPageLineCapacity(
+      contentHeight,
+      pageIndex,
+      bannerReserve,
+      pagesPerBanner,
+      0,
+    );
+    const minimumInteractionLines = Math.min(
+      remaining,
+      MIN_CHOICE_PAGE_LINES,
+    );
+    const maximumTake = Math.max(1, remaining - minimumInteractionLines);
+    const take = Math.max(1, Math.min(normalCapacity, maximumTake));
+    pages.push(measuredLines.slice(cursor, cursor + take));
+    cursor += take;
+    pageIndex += 1;
+  }
+
   return pages;
 }
 
-function chunkLines(
-  lines: readonly AnchoredMeasuredLine[],
-  capacity: number,
-): AnchoredMeasuredLine[][] {
-  const pages: AnchoredMeasuredLine[][] = [];
-  for (let index = 0; index < lines.length; index += capacity) {
-    pages.push(lines.slice(index, index + capacity));
+function getPageLineCapacity(
+  contentHeight: number,
+  pageIndex: number,
+  bannerReserve: number,
+  pagesPerBanner: number,
+  interactionReserve: number,
+): number {
+  const reservedForBanner = getPageBannerReserve(
+    pageIndex,
+    bannerReserve,
+    pagesPerBanner,
+  );
+  const reservedForInteraction =
+    interactionReserve > 0 ? interactionReserve + PAGE_GAP : 0;
+  return Math.max(
+    1,
+    Math.floor(
+      (contentHeight - reservedForBanner - reservedForInteraction) /
+        STORY_LINE_HEIGHT,
+    ),
+  );
+}
+
+function getPageBannerReserve(
+  pageIndex: number,
+  bannerReserve: number,
+  pagesPerBanner: number,
+): number {
+  if (bannerReserve <= 0 || pagesPerBanner <= 0) {
+    return 0;
   }
-  return pages;
+
+  return (pageIndex + 1) % pagesPerBanner === 0 ? bannerReserve : 0;
 }
 
 function createPhysicalPage(
