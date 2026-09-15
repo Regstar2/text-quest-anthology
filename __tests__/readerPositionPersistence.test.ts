@@ -2,6 +2,7 @@ import {StorySession} from '../src/narrative/StorySession';
 import {storyLoader} from '../src/narrative/StoryLoader';
 import {
   StorySaveRepository,
+  type StorySave,
   type StorySaveStorage,
 } from '../src/persistence/StorySaveRepository';
 
@@ -58,7 +59,18 @@ describe('semantic reader position persistence', () => {
       throw new Error('Expected persisted reader state.');
     }
 
-    const {readerPageAnchor: _readerPageAnchor, ...legacySave} = stored.save;
+    const legacySave: StorySave = {
+      storyId: stored.save.storyId,
+      storyContentVersion: stored.save.storyContentVersion,
+      runtimeState: stored.save.runtimeState,
+      startedAt: stored.save.startedAt,
+      updatedAt: stored.save.updatedAt,
+      completed: stored.save.completed,
+      endingId: stored.save.endingId,
+      readerCurrentText: stored.save.readerCurrentText,
+      readerPassages: stored.save.readerPassages,
+      readerPageIndex: stored.save.readerPageIndex,
+    };
     await repository.save('zavalinka', legacySave);
 
     const restored = await StorySession.open(storyPackage, repository);
