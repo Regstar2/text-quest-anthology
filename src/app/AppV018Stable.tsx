@@ -558,6 +558,13 @@ export function App(): React.JSX.Element {
   const interactionReserve = snapshot?.isEnded
     ? ENDING_ACTIONS_RESERVE
     : getChoiceReserve(snapshot?.choices.length ?? 0);
+  const bannerReservedHeight = Math.min(
+    ADS_CONFIG.bannerLayout.maxHeight,
+    Math.max(
+      ADS_CONFIG.bannerLayout.minHeight,
+      Math.ceil(windowHeight * ADS_CONFIG.bannerLayout.heightRatio),
+    ),
+  );
 
   useEffect(() => {
     if (readerMode !== 'pages') {
@@ -587,11 +594,20 @@ export function App(): React.JSX.Element {
       pagedReader,
       readerParagraphs,
       interactionReserve,
+      bannerReservedHeight,
+      ADS_CONFIG.bannerFrequency.pagesPerBanner,
     );
     setPaginationRequest(current =>
       current?.key === nextRequest?.key ? current : nextRequest,
     );
-  }, [interactionReserve, pagedReader, readerMode, readerParagraphs, snapshot]);
+  }, [
+    bannerReservedHeight,
+    interactionReserve,
+    pagedReader,
+    readerMode,
+    readerParagraphs,
+    snapshot,
+  ]);
 
   const currentPage = pagedReader.pages[pagedReader.currentPageIndex] ?? null;
   const pageTransitionReady =
@@ -628,14 +644,7 @@ export function App(): React.JSX.Element {
     (readerMode === 'pages'
       ? pageBannerActive
       : screen === 'reader' && feedBannerVisible);
-  const reservePagedBannerSlot = screen === 'reader' && readerMode === 'pages';
-  const bannerReservedHeight = Math.min(
-    ADS_CONFIG.bannerLayout.maxHeight,
-    Math.max(
-      ADS_CONFIG.bannerLayout.minHeight,
-      Math.ceil(windowHeight * ADS_CONFIG.bannerLayout.heightRatio),
-    ),
-  );
+  const reservePagedBannerSlot = pageBannerActive;
   const isBusy = isLoading || isMutating;
 
   const moveToPage = useCallback(
@@ -1529,7 +1538,9 @@ export function App(): React.JSX.Element {
                     setPagedReader(current =>
                       updatePagedReaderGeometry(current, {
                         width,
-                        height,
+                        height:
+                          height +
+                          (pageBannerActive ? bannerReservedHeight : 0),
                         fontScale,
                       }),
                     );
