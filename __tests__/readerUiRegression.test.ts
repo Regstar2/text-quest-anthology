@@ -93,7 +93,7 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(app).toContain(
       'const result = await session.setPage(nextPageIndex, nextPage.anchor);',
     );
-    expect(pagination).toContain('pages: state.pages');
+    expect(pagination).toContain(': {...state, currentPageIndex};');
     expect(app).not.toContain('setPaginationRequest(' + 'planPaginationMeasurement');
   });
 
