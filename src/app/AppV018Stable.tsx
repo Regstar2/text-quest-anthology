@@ -20,6 +20,7 @@ import {
   type LayoutChangeEvent,
   type TextLayoutEvent,
   useColorScheme,
+  useWindowDimensions,
 } from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import {adsProvider} from '../ads';
@@ -55,24 +56,29 @@ import {
   shouldHandleHorizontalPageSwipe,
 } from './ReaderNavigation';
 import {
+  CHOICE_GAP,
+  ENDING_ACTIONS_RESERVE,
+  FORCED_PAGE_BREAK_MARKER,
+  PAGE_GAP,
+  PAGE_VERTICAL_PADDING,
+  STORY_LINE_HEIGHT,
+  commitPaginationMeasurement,
+  createPagedReaderState,
+  getChoiceReserve,
+  indentReaderParagraph,
+  movePagedReaderToPage,
+  planPaginationMeasurement,
+  resetPagedReaderState,
+  updatePagedReaderGeometry,
+  type PaginationMeasurementRequest,
+} from './PagedReaderPagination';
+import {
   READER_THEME_LABELS,
   resolveReaderPalette,
   type ReaderPalette,
 } from './ReaderTheme';
 
 const AdsBanner = adsProvider.Banner;
-const STORY_LINE_HEIGHT = 28;
-const PAGE_GAP = 12;
-const PAGE_VERTICAL_PADDING = 12;
-const MIN_CHOICE_PAGE_LINES = 3;
-const CHOICE_ROW_RESERVE = 78;
-const CHOICE_GAP = 8;
-const ENDING_ACTIONS_RESERVE = 116;
-const PARAGRAPH_INDENT = '\u2003\u2003';
-const PARAGRAPH_BREAK_MARKER = '\uE000';
-const FORCED_PAGE_BREAK_MARKER = '\uE001';
-const ZERO_WIDTH_SPACE = '\u200B';
-const EMPTY_LINES: readonly string[] = [];
 const READER_THEMES: readonly ReaderTheme[] = [
   'auto',
   'light',
@@ -83,18 +89,6 @@ const READER_THEMES: readonly ReaderTheme[] = [
 
 type AppScreen = 'main' | 'catalog' | 'settings' | 'endings' | 'reader';
 type MenuView = 'menu' | 'restart' | null;
-
-type ReaderMeasurement = Readonly<{
-  key: string;
-  lines: readonly string[];
-}>;
-
-type ReaderPageFrame = Readonly<{
-  key: string;
-  pageIndex: number;
-  pageNumber: number;
-  paragraphs: readonly string[];
-}>;
 
 type AppColors = Readonly<{
   background: string;
@@ -108,17 +102,12 @@ type AppColors = Readonly<{
   danger: string;
 }>;
 
-const EMPTY_MEASUREMENT: ReaderMeasurement = {key: '', lines: EMPTY_LINES};
-
 export function App(): React.JSX.Element {
   const systemDark = useColorScheme() === 'dark';
+  const {height: windowHeight, fontScale} = useWindowDimensions();
   const sessionRef = useRef<StorySession | null>(null);
   const mutationLockRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
-  const measurementKeyRef = useRef('');
-  const stablePageFrameRef = useRef<ReaderPageFrame | null>(null);
-  const lastPageNumberRef = useRef(1);
-  const pageOrdinalRef = useRef(1);
   const feedChoiceCountRef = useRef(0);
 
   const storyMetadata = useMemo(() => storyLoader.listMetadata(), []);
@@ -139,27 +128,30 @@ export function App(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [hasStartedSession, setHasStartedSession] = useState(false);
-  const [pageHeight, setPageHeight] = useState(0);
-  const [readerPageIndex, setReaderPageIndex] = useState(0);
-  const [readerRevision, setReaderRevision] = useState(0);
-  const [pageLayoutPending, setPageLayoutPending] = useState(false);
-  const [pageBannerVisible, setPageBannerVisible] = useState(false);
+  const [pagedReader, setPagedReader] = useState(createPagedReaderState);
+  const [paginationRequest, setPaginationRequest] =
+    useState<PaginationMeasurementRequest | null>(null);
   const [feedBannerVisible, setFeedBannerVisible] = useState(false);
-  const [measurement, setMeasurement] =
-    useState<ReaderMeasurement>(EMPTY_MEASUREMENT);
 
   const readerPalette = resolveReaderPalette(readerPreferences.theme, systemDark);
   const appColors: AppColors = readerPalette;
   const readerMode = readerPreferences.mode;
 
+  const resetPagedReader = useCallback(
+    (
+      pageAnchor: StoryReaderSnapshot['pageAnchor'],
+      fallbackPageIndex: number,
+    ): void => {
+      setPagedReader(current =>
+        resetPagedReaderState(current, pageAnchor, fallbackPageIndex),
+      );
+      setPaginationRequest(null);
+    },
+    [],
+  );
+
   const resetReaderAdCadence = useCallback((): void => {
-    stablePageFrameRef.current = null;
-    lastPageNumberRef.current = 1;
-    pageOrdinalRef.current = 1;
     feedChoiceCountRef.current = 0;
-    setReaderPageIndex(0);
-    setPageLayoutPending(false);
-    setPageBannerVisible(false);
     setFeedBannerVisible(false);
   }, []);
 
@@ -208,14 +200,8 @@ export function App(): React.JSX.Element {
       }
 
       if (mode === 'pages') {
-        stablePageFrameRef.current = null;
-        if (feedBannerVisible) {
-          setPageLayoutPending(true);
-        }
-        setPageBannerVisible(false);
-        setReaderPageIndex(Number.MAX_SAFE_INTEGER);
-        setReaderRevision(previous => previous + 1);
-        setMeasurement(EMPTY_MEASUREMENT);
+        setFeedBannerVisible(false);
+        resetPagedReader(null, Number.MAX_SAFE_INTEGER);
       } else {
         feedChoiceCountRef.current = 0;
         setFeedBannerVisible(false);
@@ -223,7 +209,7 @@ export function App(): React.JSX.Element {
 
       persistReaderPreferences({...readerPreferences, mode});
     },
-    [feedBannerVisible, persistReaderPreferences, readerPreferences],
+    [persistReaderPreferences, readerPreferences, resetPagedReader],
   );
 
   const changeReaderTheme = useCallback(
@@ -233,8 +219,6 @@ export function App(): React.JSX.Element {
       }
 
       persistReaderPreferences({...readerPreferences, theme});
-      setReaderRevision(previous => previous + 1);
-      setMeasurement(EMPTY_MEASUREMENT);
     },
     [persistReaderPreferences, readerPreferences],
   );
@@ -332,10 +316,10 @@ export function App(): React.JSX.Element {
     sessionRef.current = null;
     hasStartedSessionRef.current = false;
     resetReaderAdCadence();
+    resetPagedReader(null, 0);
     setHasStartedSession(false);
     setActiveStory(null);
     setSnapshot(null);
-    setMeasurement(EMPTY_MEASUREMENT);
     setMenuView(null);
     setScreen('catalog');
 
@@ -355,7 +339,7 @@ export function App(): React.JSX.Element {
     };
 
     void finishExit();
-  }, [refreshCatalog, resetReaderAdCadence]);
+  }, [refreshCatalog, resetPagedReader, resetReaderAdCadence]);
 
   useEffect(() => {
     let cancelled = false;
@@ -425,16 +409,11 @@ export function App(): React.JSX.Element {
       sessionRef.current = opened.session;
       hasStartedSessionRef.current = opened.resumed;
       resetReaderAdCadence();
+      resetPagedReader(opened.snapshot.pageAnchor, initialPageIndex);
       setHasStartedSession(opened.resumed);
       setActiveStory(storyPackage.metadata);
-      setReaderPageIndex(initialPageIndex);
-      if (!opened.snapshot.isEnded) {
-        lastPageNumberRef.current = initialPageIndex + 1;
-      }
       setSnapshot(opened.snapshot);
       setNotice(recoveryMessage(opened.recovery));
-      setReaderRevision(previous => previous + 1);
-      setMeasurement(EMPTY_MEASUREMENT);
 
       if (!opened.resumed) {
         const persisted = await opened.session.flush();
@@ -454,6 +433,7 @@ export function App(): React.JSX.Element {
       sessionRef.current = null;
       hasStartedSessionRef.current = false;
       resetReaderAdCadence();
+      resetPagedReader(null, 0);
       setHasStartedSession(false);
       setActiveStory(null);
       setSnapshot(null);
@@ -480,13 +460,10 @@ export function App(): React.JSX.Element {
       sessionRef.current = opened.session;
       hasStartedSessionRef.current = true;
       resetReaderAdCadence();
+      resetPagedReader(fresh.snapshot.pageAnchor, 0);
       setHasStartedSession(true);
       setActiveStory(storyPackage.metadata);
-      setReaderPageIndex(0);
-      lastPageNumberRef.current = 1;
       setSnapshot(fresh.snapshot);
-      setReaderRevision(previous => previous + 1);
-      setMeasurement(EMPTY_MEASUREMENT);
       setNotice(fresh.persisted ? null : UI_STRINGS.saveFailed);
       setScreen('reader');
 
@@ -511,33 +488,18 @@ export function App(): React.JSX.Element {
       return;
     }
 
-    const currentReaderPageIndex =
-      stablePageFrameRef.current?.pageIndex ?? effectivePageIndex;
     const nextReaderPageIndex =
-      readerMode === 'pages' ? currentReaderPageIndex + 1 : undefined;
+      readerMode === 'pages' ? pagedReader.currentPageIndex + 1 : undefined;
 
     try {
       const result = await session.choose(choiceIndex, nextReaderPageIndex);
 
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
-      setReaderRevision(previous => previous + 1);
-      setMeasurement(EMPTY_MEASUREMENT);
-      setReaderPageIndex(nextReaderPageIndex ?? result.snapshot.pageIndex);
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
 
-      if (readerMode === 'pages') {
-        const nextPageOrdinal = pageOrdinalRef.current + 1;
-        const nextBannerVisible =
-          !result.snapshot.isEnded &&
-          nextPageOrdinal % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0;
-        if (nextBannerVisible !== pageBannerVisible) {
-          setPageLayoutPending(true);
-        }
-        pageOrdinalRef.current = nextPageOrdinal;
-        setPageBannerVisible(nextBannerVisible);
-      } else {
+      if (readerMode === 'feed') {
         const nextChoiceCount = feedChoiceCountRef.current + 1;
         feedChoiceCountRef.current = nextChoiceCount;
         setFeedBannerVisible(
@@ -568,11 +530,8 @@ export function App(): React.JSX.Element {
       const result = await session.restart();
       hasStartedSessionRef.current = true;
       resetReaderAdCadence();
+      resetPagedReader(result.snapshot.pageAnchor, 0);
       setHasStartedSession(true);
-      setReaderRevision(previous => previous + 1);
-      setMeasurement(EMPTY_MEASUREMENT);
-      setReaderPageIndex(0);
-      lastPageNumberRef.current = 1;
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
       setScreen('reader');
@@ -596,136 +555,104 @@ export function App(): React.JSX.Element {
     () => buildReaderParagraphs(snapshot),
     [snapshot],
   );
-  const readerText = useMemo(
-    () =>
-      readerParagraphs
-        .map(paragraph =>
-          paragraph.startsWith(FORCED_PAGE_BREAK_MARKER)
-            ? paragraph
-            : indentParagraph(paragraph),
-        )
-        .join('\n'),
-    [readerParagraphs],
-  );
-  const measurementKey = `${readerRevision}\u0000${readerText}`;
-  const measurementText =
-    readerRevision % 2 === 0 ? readerText : `${readerText}${ZERO_WIDTH_SPACE}`;
+  const interactionReserve = snapshot?.isEnded
+    ? ENDING_ACTIONS_RESERVE
+    : getChoiceReserve(snapshot?.choices.length ?? 0);
 
-  measurementKeyRef.current = measurementKey;
+  useEffect(() => {
+    if (readerMode !== 'pages' || !snapshot) {
+      setPaginationRequest(null);
+      return;
+    }
 
-  const activeLines =
-    measurement.key === measurementKey ? measurement.lines : EMPTY_LINES;
+    const nextRequest = planPaginationMeasurement(
+      pagedReader,
+      readerParagraphs,
+      interactionReserve,
+    );
+    setPaginationRequest(current =>
+      current?.key === nextRequest?.key ? current : nextRequest,
+    );
+  }, [interactionReserve, pagedReader, readerMode, readerParagraphs, snapshot]);
+
+  const currentPage = pagedReader.pages[pagedReader.currentPageIndex] ?? null;
+  const pageTransitionReady =
+    currentPage !== null &&
+    currentPage.geometryRevision === pagedReader.geometryRevision &&
+    paginationRequest === null;
+  const readerContentCommitted =
+    pagedReader.processedPassageCount === readerParagraphs.length;
+  const isChoicePage =
+    pageTransitionReady &&
+    readerContentCommitted &&
+    !snapshot?.isEnded &&
+    Boolean(snapshot?.choices.length) &&
+    pagedReader.currentPageIndex === pagedReader.pages.length - 1;
+  const isEndingPage =
+    pageTransitionReady &&
+    readerContentCommitted &&
+    snapshot?.isEnded === true &&
+    pagedReader.currentPageIndex === pagedReader.pages.length - 1;
+  const isInteractionPage = isChoicePage || isEndingPage;
+  const displayedPageNumber = currentPage
+    ? pagedReader.currentPageIndex + 1
+    : null;
   const pageBannerActive =
     screen === 'reader' &&
     snapshot?.isEnded !== true &&
     readerMode === 'pages' &&
-    pageBannerVisible;
-  const paginationHeight = pageHeight;
-  const measurementReady = paginationHeight > 0 && activeLines.length > 0;
-  const choiceReserve = getChoiceReserve(snapshot?.choices.length ?? 0);
-  const interactionReserve = snapshot?.isEnded
-    ? ENDING_ACTIONS_RESERVE
-    : choiceReserve;
-  const pages = useMemo(
-    () =>
-      measurementReady
-        ? paginateLines(activeLines, paginationHeight, interactionReserve)
-        : [],
-    [activeLines, interactionReserve, measurementReady, paginationHeight],
-  );
-  const effectivePageIndex =
-    snapshot && pages.length > 0
-      ? clampPageIndex(readerPageIndex, pages.length)
-      : 0;
-  const resolvedPageParagraphs = useMemo(
-    () =>
-      measurementReady
-        ? pageLinesToParagraphs(pages[effectivePageIndex] ?? EMPTY_LINES)
-        : [],
-    [effectivePageIndex, measurementReady, pages],
-  );
-  const pageFrameReady = measurementReady && !pageLayoutPending;
-
-  if (pageFrameReady) {
-    const pageNumber = effectivePageIndex + 1;
-    stablePageFrameRef.current = {
-      key: `${readerRevision}:${effectivePageIndex}:${paginationHeight}`,
-      pageIndex: effectivePageIndex,
-      pageNumber,
-      paragraphs: resolvedPageParagraphs,
-    };
-    lastPageNumberRef.current = pageNumber;
-  }
-
-  const displayedPageFrame = stablePageFrameRef.current;
-  const displayedPageNumber =
-    displayedPageFrame?.pageNumber ?? lastPageNumberRef.current;
-  const visiblePageParagraphs = displayedPageFrame?.paragraphs ?? [];
-  const pageTransitionReady =
-    pageFrameReady && displayedPageFrame?.pageIndex === effectivePageIndex;
-  const isChoicePage =
-    pageTransitionReady &&
-    !snapshot?.isEnded &&
-    Boolean(snapshot?.choices.length) &&
-    effectivePageIndex === pages.length - 1;
-  const isEndingPage =
-    pageTransitionReady &&
-    snapshot?.isEnded === true &&
-    effectivePageIndex === pages.length - 1;
-  const isInteractionPage = isChoicePage || isEndingPage;
+    currentPage !== null &&
+    (pagedReader.currentPageIndex + 1) %
+      ADS_CONFIG.bannerFrequency.pagesPerBanner ===
+      0;
   const showReaderBanner =
     snapshot?.isEnded !== true &&
     (readerMode === 'pages'
       ? pageBannerActive
       : screen === 'reader' && feedBannerVisible);
+  const reservePagedBannerSlot = screen === 'reader' && readerMode === 'pages';
+  const bannerReservedHeight = Math.min(
+    ADS_CONFIG.bannerLayout.maxHeight,
+    Math.max(
+      ADS_CONFIG.bannerLayout.minHeight,
+      Math.ceil(windowHeight * ADS_CONFIG.bannerLayout.heightRatio),
+    ),
+  );
   const isBusy = isLoading || isMutating;
 
   const moveToPage = useCallback(
     async (requestedPageIndex: number) => {
       const session = sessionRef.current;
-      if (!session || !snapshot || pages.length === 0 || !beginMutation()) {
+      if (
+        !session ||
+        !snapshot ||
+        pagedReader.pages.length === 0 ||
+        !beginMutation()
+      ) {
         return;
       }
 
-      const nextPageIndex = clampPageIndex(requestedPageIndex, pages.length);
-      const previousPageIndex = effectivePageIndex;
-
+      const nextPageIndex = clampPageIndex(
+        requestedPageIndex,
+        pagedReader.pages.length,
+      );
+      const previousPageIndex = pagedReader.currentPageIndex;
       if (nextPageIndex === previousPageIndex) {
         endMutation();
         return;
       }
 
-      const pageDelta = nextPageIndex - previousPageIndex;
-      const previousPageOrdinal = pageOrdinalRef.current;
-      const previousBannerVisible = pageBannerVisible;
-      let bannerChanged = false;
-
-      if (readerMode === 'pages') {
-        const nextPageOrdinal = Math.max(1, previousPageOrdinal + pageDelta);
-        const nextBannerVisible =
-          !snapshot.isEnded &&
-          nextPageOrdinal % ADS_CONFIG.bannerFrequency.pagesPerBanner === 0;
-        bannerChanged = nextBannerVisible !== previousBannerVisible;
-        if (bannerChanged) {
-          setPageLayoutPending(true);
-        }
-        pageOrdinalRef.current = nextPageOrdinal;
-        setPageBannerVisible(nextBannerVisible);
-      }
-
-      setReaderPageIndex(nextPageIndex);
+      const nextPage = pagedReader.pages[nextPageIndex];
+      setPagedReader(current => movePagedReaderToPage(current, nextPageIndex));
 
       try {
-        const result = await session.setPage(nextPageIndex);
+        const result = await session.setPage(nextPageIndex, nextPage.anchor);
         setSnapshot(result.snapshot);
         setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
       } catch {
-        pageOrdinalRef.current = previousPageOrdinal;
-        if (bannerChanged) {
-          setPageLayoutPending(true);
-        }
-        setPageBannerVisible(previousBannerVisible);
-        setReaderPageIndex(previousPageIndex);
+        setPagedReader(current =>
+          movePagedReaderToPage(current, previousPageIndex),
+        );
         setNotice(UI_STRINGS.storyActionFailed);
       } finally {
         endMutation();
@@ -733,11 +660,9 @@ export function App(): React.JSX.Element {
     },
     [
       beginMutation,
-      effectivePageIndex,
       endMutation,
-      pageBannerVisible,
-      pages.length,
-      readerMode,
+      pagedReader.currentPageIndex,
+      pagedReader.pages,
       snapshot,
     ],
   );
@@ -762,19 +687,19 @@ export function App(): React.JSX.Element {
 
           void moveToPage(
             pageAfterHorizontalSwipe(
-              effectivePageIndex,
-              pages.length,
+              pagedReader.currentPageIndex,
+              pagedReader.pages.length,
               gestureState.dx,
             ),
           );
         },
       }),
     [
-      effectivePageIndex,
       isBusy,
       moveToPage,
       pageTransitionReady,
-      pages.length,
+      pagedReader.currentPageIndex,
+      pagedReader.pages.length,
       readerMode,
     ],
   );
@@ -812,9 +737,9 @@ export function App(): React.JSX.Element {
           snapshot?.isEnded === true &&
           readerMode === 'pages' &&
           pageTransitionReady &&
-          effectivePageIndex > 0
+          pagedReader.currentPageIndex > 0
         ) {
-          void moveToPage(effectivePageIndex - 1);
+          void moveToPage(pagedReader.currentPageIndex - 1);
           return true;
         }
 
@@ -826,36 +751,31 @@ export function App(): React.JSX.Element {
     return () => subscription.remove();
   }, [
     catalogRestartTarget,
-    effectivePageIndex,
     exitStory,
     menuView,
     moveToPage,
     pageTransitionReady,
+    pagedReader.currentPageIndex,
     readerMode,
     screen,
     showMain,
     snapshot?.isEnded,
   ]);
 
-  const recordMeasuredLines = (
-    callbackKey: string,
+  const commitMeasuredLines = (
+    request: PaginationMeasurementRequest,
     lines: readonly string[],
   ) => {
-    if (measurementKeyRef.current !== callbackKey || lines.length === 0) {
+    if (lines.length === 0) {
       return;
     }
 
-    const normalizedLines = lines.map(normalizeMeasuredLine);
-
-    setMeasurement(previous => {
-      if (
-        previous.key === callbackKey &&
-        sameLines(previous.lines, normalizedLines)
-      ) {
-        return previous;
-      }
-      return {key: callbackKey, lines: normalizedLines};
-    });
+    setPagedReader(current =>
+      commitPaginationMeasurement(current, request, lines),
+    );
+    setPaginationRequest(current =>
+      current?.key === request.key ? null : current,
+    );
   };
 
   const renderChoices = (enabled: boolean) => {
@@ -1278,11 +1198,18 @@ export function App(): React.JSX.Element {
       <StatusBar barStyle={readerPalette.statusBar} />
       <SafeAreaView
         style={[styles.safeArea, {backgroundColor: appColors.background}]}>
-        <AdsBanner
-          isDarkMode={readerPalette.statusBar === 'light-content'}
-          reserveSpace={false}
-          visible={showReaderBanner}
-        />
+        <View
+          style={
+            reservePagedBannerSlot
+              ? [styles.pagedBannerSlot, {height: bannerReservedHeight}]
+              : undefined
+          }>
+          <AdsBanner
+            isDarkMode={readerPalette.statusBar === 'light-content'}
+            reserveSpace={false}
+            visible={showReaderBanner}
+          />
+        </View>
 
         {screen === 'main' ? (
           <View style={styles.screen}>
@@ -1580,28 +1507,31 @@ export function App(): React.JSX.Element {
                 <View
                   collapsable={false}
                   onLayout={(event: LayoutChangeEvent) => {
-                    const nextHeight = event.nativeEvent.layout.height;
-                    if (nextHeight !== pageHeight) {
-                      setPageHeight(nextHeight);
-                    }
-                    if (pageLayoutPending) {
-                      setPageLayoutPending(false);
-                    }
+                    const {width, height} = event.nativeEvent.layout;
+                    setPagedReader(current =>
+                      updatePagedReaderGeometry(current, {
+                        width,
+                        height,
+                        fontScale,
+                      }),
+                    );
                   }}
                   style={styles.pageBody}>
-                  <Text
-                    key={`measurement-${measurementKey}`}
-                    maxFontSizeMultiplier={1.35}
-                    onTextLayout={(event: TextLayoutEvent) => {
-                      recordMeasuredLines(
-                        measurementKey,
-                        event.nativeEvent.lines.map(line => line.text),
-                      );
-                    }}
-                    pointerEvents="none"
-                    style={styles.measureText}>
-                    {measurementText}
-                  </Text>
+                  {paginationRequest ? (
+                    <Text
+                      key={`measurement-${paginationRequest.key}`}
+                      maxFontSizeMultiplier={1.35}
+                      onTextLayout={(event: TextLayoutEvent) => {
+                        commitMeasuredLines(
+                          paginationRequest,
+                          event.nativeEvent.lines.map(line => line.text),
+                        );
+                      }}
+                      pointerEvents="none"
+                      style={styles.measureText}>
+                      {paginationRequest.text}
+                    </Text>
+                  ) : null}
 
                   <View
                     {...pagePanResponder.panHandlers}
@@ -1612,9 +1542,9 @@ export function App(): React.JSX.Element {
                         paddingBottom: interactionReserve + PAGE_GAP,
                       },
                     ]}>
-                    {visiblePageParagraphs.map((paragraph, index) => (
+                    {(currentPage?.paragraphs ?? []).map((paragraph, index) => (
                       <Text
-                        key={`page-${displayedPageFrame?.key ?? 'empty'}-${index}`}
+                        key={`page-${currentPage?.key ?? 'empty'}-${index}`}
                         maxFontSizeMultiplier={1.35}
                         style={[styles.storyParagraph, {color: readerPalette.text}]}>
                         {paragraph}
@@ -1627,10 +1557,10 @@ export function App(): React.JSX.Element {
                         disabled={
                           isBusy ||
                           !pageTransitionReady ||
-                          effectivePageIndex === 0
+                          pagedReader.currentPageIndex === 0
                         }
                         onPress={() => {
-                          void moveToPage(effectivePageIndex - 1);
+                          void moveToPage(pagedReader.currentPageIndex - 1);
                         }}
                         style={styles.tapZone}
                       />
@@ -1639,10 +1569,11 @@ export function App(): React.JSX.Element {
                         disabled={
                           isBusy ||
                           !pageTransitionReady ||
-                          effectivePageIndex >= pages.length - 1
+                          pagedReader.currentPageIndex >=
+                            pagedReader.pages.length - 1
                         }
                         onPress={() => {
-                          void moveToPage(effectivePageIndex + 1);
+                          void moveToPage(pagedReader.currentPageIndex + 1);
                         }}
                         style={styles.tapZone}
                       />
@@ -1668,10 +1599,10 @@ export function App(): React.JSX.Element {
                     disabled={
                       isBusy ||
                       !pageTransitionReady ||
-                      effectivePageIndex === 0
+                      pagedReader.currentPageIndex === 0
                     }
                     onPress={() => {
-                      void moveToPage(effectivePageIndex - 1);
+                      void moveToPage(pagedReader.currentPageIndex - 1);
                     }}
                     style={({pressed}) => [
                       styles.pageNavButton,
@@ -1679,16 +1610,16 @@ export function App(): React.JSX.Element {
                       pressed && styles.buttonPressed,
                       (isBusy ||
                         !pageTransitionReady ||
-                        effectivePageIndex === 0) &&
+                        pagedReader.currentPageIndex === 0) &&
                         styles.disabled,
                     ]}>
                     <Text style={[styles.pageNavText, {color: readerPalette.text}]}>←</Text>
                   </Pressable>
 
                   <Text
-                    key={`page-counter-${displayedPageNumber}`}
+                    key={`page-counter-${displayedPageNumber ?? 'pending'}`}
                     style={[styles.pageCounter, {color: readerPalette.muted}]}>
-                    {displayedPageNumber}
+                    {displayedPageNumber ?? ''}
                   </Text>
 
                   <Pressable
@@ -1697,10 +1628,10 @@ export function App(): React.JSX.Element {
                     disabled={
                       isBusy ||
                       !pageTransitionReady ||
-                      effectivePageIndex >= pages.length - 1
+                      pagedReader.currentPageIndex >= pagedReader.pages.length - 1
                     }
                     onPress={() => {
-                      void moveToPage(effectivePageIndex + 1);
+                      void moveToPage(pagedReader.currentPageIndex + 1);
                     }}
                     style={({pressed}) => [
                       styles.pageNavButton,
@@ -1708,7 +1639,8 @@ export function App(): React.JSX.Element {
                       pressed && styles.buttonPressed,
                       (isBusy ||
                         !pageTransitionReady ||
-                        effectivePageIndex >= pages.length - 1) &&
+                        pagedReader.currentPageIndex >=
+                          pagedReader.pages.length - 1) &&
                         styles.disabled,
                     ]}>
                     <Text style={[styles.pageNavText, {color: readerPalette.text}]}>→</Text>
@@ -1730,7 +1662,7 @@ export function App(): React.JSX.Element {
                         key={`${index}-${passage.slice(0, 24)}`}
                         maxFontSizeMultiplier={1.35}
                         style={[styles.storyParagraph, {color: readerPalette.text}]}>
-                        {indentParagraph(passage)}
+                        {indentReaderParagraph(passage)}
                       </Text>
                     ))}
                 </View>
@@ -1906,199 +1838,6 @@ function splitParagraphs(text: string): string[] {
     .filter(paragraph => paragraph.length > 0);
 }
 
-function indentParagraph(paragraph: string): string {
-  return `${PARAGRAPH_INDENT}${paragraph.trim()}`;
-}
-
-function normalizeMeasuredLine(line: string): string {
-  const hasParagraphBreak = /[\r\n]/.test(line);
-  const normalized = line
-    .replace(/[\r\n]/g, '')
-    .split(ZERO_WIDTH_SPACE)
-    .join('');
-
-  return hasParagraphBreak
-    ? `${normalized}${PARAGRAPH_BREAK_MARKER}`
-    : normalized;
-}
-
-function pageLinesToParagraphs(lines: readonly string[]): string[] {
-  const paragraphs: string[] = [];
-  let current = '';
-
-  for (const rawLine of lines) {
-    if (rawLine.includes(FORCED_PAGE_BREAK_MARKER)) {
-      if (current.length > 0) {
-        paragraphs.push(current);
-        current = '';
-      }
-      continue;
-    }
-
-    const hasExplicitBreak = rawLine.endsWith(PARAGRAPH_BREAK_MARKER);
-    const line = rawLine.split(PARAGRAPH_BREAK_MARKER).join('').trimEnd();
-
-    if (line.length === 0) {
-      if (current.length > 0) {
-        paragraphs.push(current);
-        current = '';
-      }
-      continue;
-    }
-
-    const startsParagraph = line.startsWith(PARAGRAPH_INDENT);
-    if (startsParagraph && current.length > 0) {
-      paragraphs.push(current);
-      current = line;
-    } else {
-      current = current.length > 0 ? `${current} ${line}` : line;
-    }
-
-    if (hasExplicitBreak && current.length > 0) {
-      paragraphs.push(current);
-      current = '';
-    }
-  }
-
-  if (current.length > 0) {
-    paragraphs.push(current);
-  }
-
-  return paragraphs;
-}
-
-function getChoiceReserve(choiceCount: number): number {
-  if (choiceCount <= 0) {
-    return 0;
-  }
-  return choiceCount * CHOICE_ROW_RESERVE + Math.max(0, choiceCount - 1) * CHOICE_GAP;
-}
-
-function getPageBreakReserve(line: string): number {
-  const markerIndex = line.indexOf(FORCED_PAGE_BREAK_MARKER);
-  if (markerIndex < 0) {
-    return 0;
-  }
-
-  const suffix = line.slice(markerIndex + FORCED_PAGE_BREAK_MARKER.length);
-  const match = /^:(\d+)/.exec(suffix);
-  if (!match) {
-    return 0;
-  }
-
-  return getChoiceReserve(Number(match[1]));
-}
-
-function paginateLines(
-  measuredLines: readonly string[],
-  pageHeight: number,
-  interactionReserve: number,
-): string[][] {
-  if (measuredLines.length === 0) {
-    return [];
-  }
-
-  const contentHeight = Math.max(
-    STORY_LINE_HEIGHT,
-    pageHeight - PAGE_VERTICAL_PADDING,
-  );
-  const measuredNormalCapacity = Math.max(
-    1,
-    Math.floor(contentHeight / STORY_LINE_HEIGHT),
-  );
-  const normalCapacity = measuredNormalCapacity;
-
-  const pages: string[][] = [];
-  let segmentStart = 0;
-
-  for (let index = 0; index < measuredLines.length; index += 1) {
-    if (!measuredLines[index].includes(FORCED_PAGE_BREAK_MARKER)) {
-      continue;
-    }
-
-    const segment = measuredLines.slice(segmentStart, index);
-    if (segment.length > 0) {
-      pages.push(
-        ...paginateTail(
-          segment,
-          contentHeight,
-          normalCapacity,
-          getPageBreakReserve(measuredLines[index]),
-        ),
-      );
-    }
-    segmentStart = index + 1;
-  }
-
-  const tail = measuredLines.slice(segmentStart);
-  pages.push(
-    ...paginateTail(
-      tail,
-      contentHeight,
-      normalCapacity,
-      interactionReserve,
-    ),
-  );
-
-  return pages.length > 0 ? pages : [[]];
-}
-
-function paginateTail(
-  measuredLines: readonly string[],
-  contentHeight: number,
-  normalCapacity: number,
-  interactionReserve: number,
-): string[][] {
-  if (measuredLines.length === 0) {
-    return [[]];
-  }
-
-  if (interactionReserve <= 0) {
-    return chunkLines(measuredLines, normalCapacity);
-  }
-
-  const measuredInteractionCapacity = Math.max(
-    1,
-    Math.floor(
-      (contentHeight - interactionReserve - PAGE_GAP) / STORY_LINE_HEIGHT,
-    ),
-  );
-  const interactionCapacity = measuredInteractionCapacity;
-  const minimumInteractionLines = Math.min(
-    measuredLines.length,
-    interactionCapacity,
-    MIN_CHOICE_PAGE_LINES,
-  );
-
-  const pages: string[][] = [];
-  let cursor = 0;
-
-  while (measuredLines.length - cursor > interactionCapacity) {
-    const remaining = measuredLines.length - cursor;
-    const maximumTake = Math.max(1, remaining - minimumInteractionLines);
-    const take = Math.min(normalCapacity, maximumTake);
-    pages.push(measuredLines.slice(cursor, cursor + take));
-    cursor += take;
-  }
-
-  pages.push(measuredLines.slice(cursor));
-  return pages;
-}
-
-function chunkLines(lines: readonly string[], capacity: number): string[][] {
-  const pages: string[][] = [];
-
-  for (let index = 0; index < lines.length; index += capacity) {
-    pages.push(lines.slice(index, index + capacity));
-  }
-
-  return pages.length > 0 ? pages : [[]];
-}
-
-function sameLines(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((line, index) => line === right[index]);
-}
-
 function recoveryMessage(recovery: StorySessionRecovery | null): string | null {
   switch (recovery) {
     case 'corrupted-save-reset':
@@ -2118,6 +1857,7 @@ const styles = StyleSheet.create({
   buttonPressed: {opacity: 0.68},
   disabled: {opacity: 0.38},
   whiteText: {color: '#ffffff'},
+  pagedBannerSlot: {flexShrink: 0, overflow: 'hidden'},
   mainContent: {
     flex: 1,
     justifyContent: 'center',
@@ -2255,8 +1995,11 @@ const styles = StyleSheet.create({
   },
   menuButtonText: {fontSize: 30, lineHeight: 32},
   readerNotice: {
-    marginHorizontal: 20,
-    marginTop: 8,
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    top: 60,
+    zIndex: 20,
     borderRadius: 10,
     padding: 9,
     fontSize: 13,
