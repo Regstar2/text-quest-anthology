@@ -1,3 +1,8 @@
+import {
+  isReaderSemanticAnchor,
+  type ReaderSemanticAnchor,
+} from '../narrative/ReaderPosition';
+
 export type StorySaveStorage = Readonly<{
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
@@ -15,6 +20,7 @@ export type StorySave = Readonly<{
   readerCurrentText?: string;
   readerPassages?: readonly string[];
   readerPageIndex?: number;
+  readerPageAnchor?: ReaderSemanticAnchor | null;
 }>;
 
 export type StorySaveCorruptionReason =
@@ -102,7 +108,8 @@ function isStorySave(value: unknown): value is StorySave {
     ) ||
     !isOptionalText(value.readerCurrentText) ||
     !isReaderPassages(value.readerPassages) ||
-    !isReaderPageIndex(value.readerPageIndex)
+    !isReaderPageIndex(value.readerPageIndex) ||
+    !isOptionalReaderPageAnchor(value.readerPageAnchor)
   ) {
     return false;
   }
@@ -133,6 +140,12 @@ function isReaderPageIndex(value: unknown): value is number | undefined {
     value === undefined ||
     (typeof value === 'number' && Number.isInteger(value) && value >= 0)
   );
+}
+
+function isOptionalReaderPageAnchor(
+  value: unknown,
+): value is ReaderSemanticAnchor | null | undefined {
+  return value === undefined || value === null || isReaderSemanticAnchor(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
