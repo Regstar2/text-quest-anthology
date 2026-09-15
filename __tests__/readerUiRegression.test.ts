@@ -111,12 +111,14 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(pagination).toContain('processedPassageCount: request.sourcePassageCount,');
   });
 
-  test('geometry change triggers full pagination with semantic-anchor restoration', () => {
+  test('geometry and font-scale changes trigger full pagination with semantic-anchor restoration', () => {
     const app = source('src/app/AppV018Stable.tsx');
     const pagination = source('src/app/PagedReaderPagination.ts');
 
     expect(app).toContain('updatePagedReaderGeometry(current, {');
-    expect(app).toContain('fontScale,');
+    expect(app).toContain('width: current.geometry.width,');
+    expect(app).toContain('height: current.geometry.height,');
+    expect(app).toContain('}, [fontScale, readerMode]);');
     expect(pagination).toContain('geometryRevision: state.geometryRevision + 1,');
     expect(pagination).toContain('restoreAnchor: currentPage?.anchor ?? state.restoreAnchor,');
     expect(pagination).toContain('function restorePageIndex(');
