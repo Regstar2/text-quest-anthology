@@ -108,7 +108,9 @@ export function updatePagedReaderGeometry(
     geometry: normalized,
     geometryRevision: state.geometryRevision + 1,
     restoreAnchor: currentPage?.anchor ?? state.restoreAnchor,
-    fallbackPageIndex: state.currentPageIndex,
+    fallbackPageIndex: currentPage
+      ? state.currentPageIndex
+      : state.fallbackPageIndex,
   };
 }
 
