@@ -99,7 +99,7 @@ describe('StorySession persistence flow', () => {
     expect(result.snapshot.pageIndex).toBe(0);
     expect(result.snapshot.isEnded).toBe(false);
     expect(result.snapshot.choices).toHaveLength(2);
-    expect(result.snapshot.text).toContain('К дому они подошли уже в сумерках');
+    expect(result.snapshot.text).toContain('К дому с целыми окнами они подошли уже в сумерках');
     expect(result.snapshot.passages.length).toBeGreaterThan(initialPassageCount);
 
     const pageBreakIndex = result.snapshot.passages.findIndex(passage =>
@@ -110,7 +110,7 @@ describe('StorySession persistence flow', () => {
       `${READER_PAGE_BREAK_MARKER}:4`,
     );
     expect(result.snapshot.passages[pageBreakIndex + 1]).toContain(
-      'К дому они подошли уже в сумерках',
+      'К дому с целыми окнами они подошли уже в сумерках',
     );
   });
 
