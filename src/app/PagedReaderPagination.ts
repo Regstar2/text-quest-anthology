@@ -523,6 +523,22 @@ function paginateTail(
     return pages;
   }
 
+  const interactionPageIndex = pageIndexOffset + pages.length;
+  const nextInteractionCapacity = getPageLineCapacity(
+    contentHeight,
+    interactionPageIndex,
+    bannerReserve,
+    pagesPerBanner,
+    interactionReserve,
+  );
+  const splitIndex = findReadableTailStart(lastPage, nextInteractionCapacity);
+
+  if (splitIndex !== null) {
+    pages[pages.length - 1] = lastPage.slice(0, splitIndex);
+    pages.push(lastPage.slice(splitIndex));
+    return pages;
+  }
+
   const finalLine = measuredLines[measuredLines.length - 1];
   pages.push([
     Object.freeze({
@@ -531,6 +547,31 @@ function paginateTail(
     }),
   ]);
   return pages;
+}
+
+function findReadableTailStart(
+  lines: readonly AnchoredMeasuredLine[],
+  capacity: number,
+): number | null {
+  if (lines.length <= 1 || capacity <= 0) {
+    return null;
+  }
+
+  const earliestStart = Math.max(1, lines.length - capacity);
+
+  for (let start = earliestStart; start < lines.length; start += 1) {
+    if (isParagraphBoundary(lines, start)) {
+      return start;
+    }
+  }
+
+  for (let start = earliestStart; start < lines.length; start += 1) {
+    if (isSentenceBoundary(lines[start - 1].text)) {
+      return start;
+    }
+  }
+
+  return null;
 }
 
 function chooseNarrativePageTake(
