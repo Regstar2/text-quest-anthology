@@ -142,10 +142,9 @@ describe('deterministic paged reader model', () => {
     expect(state.pages[0].paragraphs).toEqual([
       '  Первая строка.',
       '  Вторая строка.',
+      '  Порыв ветра ударил дождём сбоку. Лера отвернулась и натянула капюшон ниже.',
     ]);
-    expect(state.pages[1].paragraphs[0]).toContain(
-      'Порыв ветра ударил дождём сбоку. Лера отвернулась и натянула капюшон ниже.',
-    );
+    expect(state.pages[1].paragraphs).toEqual(['  Следующий абзац.']);
   });
 
   test('choice boundaries do not reserve or redistribute narrative page space', () => {
