@@ -576,7 +576,7 @@ function isParagraphBoundary(
 
 function isSentenceBoundary(line: string): boolean {
   const visible = line.split(PARAGRAPH_BREAK_MARKER).join('').trim();
-  return /[.!?…](?:["»”')\\]]+)?$/.test(visible);
+  return /[.!?…](?:["»”')]+)?$/.test(visible);
 }
 
 function getPageLineCapacity(
