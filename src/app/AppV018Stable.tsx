@@ -57,14 +57,11 @@ import {
 } from './ReaderNavigation';
 import {
   CHOICE_GAP,
-  ENDING_ACTIONS_RESERVE,
   FORCED_PAGE_BREAK_MARKER,
-  PAGE_GAP,
   PAGE_VERTICAL_PADDING,
   STORY_LINE_HEIGHT,
   commitPaginationMeasurement,
   createPagedReaderState,
-  getChoiceReserve,
   indentReaderParagraph,
   movePagedReaderToPage,
   planPaginationMeasurement,
@@ -131,6 +128,7 @@ export function App(): React.JSX.Element {
   const [pagedReader, setPagedReader] = useState(createPagedReaderState);
   const [paginationRequest, setPaginationRequest] =
     useState<PaginationMeasurementRequest | null>(null);
+  const [pagedInteractionVisible, setPagedInteractionVisible] = useState(false);
   const [feedBannerVisible, setFeedBannerVisible] = useState(false);
 
   const readerPalette = resolveReaderPalette(readerPreferences.theme, systemDark);
@@ -146,6 +144,7 @@ export function App(): React.JSX.Element {
         resetPagedReaderState(current, pageAnchor, fallbackPageIndex),
       );
       setPaginationRequest(null);
+      setPagedInteractionVisible(false);
     },
     [],
   );
@@ -496,6 +495,7 @@ export function App(): React.JSX.Element {
 
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
+      setPagedInteractionVisible(false);
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
 
@@ -555,9 +555,6 @@ export function App(): React.JSX.Element {
     () => buildReaderParagraphs(snapshot),
     [snapshot],
   );
-  const interactionReserve = snapshot?.isEnded
-    ? ENDING_ACTIONS_RESERVE
-    : getChoiceReserve(snapshot?.choices.length ?? 0);
   const bannerReservedHeight = Math.min(
     ADS_CONFIG.bannerLayout.maxHeight,
     Math.max(
@@ -593,7 +590,6 @@ export function App(): React.JSX.Element {
     const nextRequest = planPaginationMeasurement(
       pagedReader,
       readerParagraphs,
-      interactionReserve,
       bannerReservedHeight,
       ADS_CONFIG.bannerFrequency.pagesPerBanner,
     );
@@ -602,7 +598,6 @@ export function App(): React.JSX.Element {
     );
   }, [
     bannerReservedHeight,
-    interactionReserve,
     pagedReader,
     readerMode,
     readerParagraphs,
@@ -610,31 +605,28 @@ export function App(): React.JSX.Element {
   ]);
 
   const currentPage = pagedReader.pages[pagedReader.currentPageIndex] ?? null;
+  const readerContentCommitted =
+    pagedReader.processedPassageCount === readerParagraphs.length;
   const pageTransitionReady =
     currentPage !== null &&
     currentPage.geometryRevision === pagedReader.geometryRevision &&
-    paginationRequest === null;
-  const readerContentCommitted =
-    pagedReader.processedPassageCount === readerParagraphs.length;
-  const isChoicePage =
+    paginationRequest === null &&
+    readerContentCommitted;
+  const canOpenPagedInteraction =
     pageTransitionReady &&
-    readerContentCommitted &&
-    !snapshot?.isEnded &&
-    Boolean(snapshot?.choices.length) &&
-    pagedReader.currentPageIndex === pagedReader.pages.length - 1;
-  const isEndingPage =
-    pageTransitionReady &&
-    readerContentCommitted &&
-    snapshot?.isEnded === true &&
-    pagedReader.currentPageIndex === pagedReader.pages.length - 1;
-  const isInteractionPage = isChoicePage || isEndingPage;
-  const displayedPageNumber = currentPage
-    ? pagedReader.currentPageIndex + 1
-    : null;
+    pagedReader.currentPageIndex === pagedReader.pages.length - 1 &&
+    (snapshot?.isEnded === true || Boolean(snapshot?.choices.length));
+  const isPagedInteractionVisible =
+    pagedInteractionVisible && canOpenPagedInteraction;
+  const displayedPageNumber =
+    !isPagedInteractionVisible && pageTransitionReady
+      ? pagedReader.currentPageIndex + 1
+      : null;
   const pageBannerActive =
     screen === 'reader' &&
     snapshot?.isEnded !== true &&
     readerMode === 'pages' &&
+    !isPagedInteractionVisible &&
     currentPage !== null &&
     (pagedReader.currentPageIndex + 1) %
       ADS_CONFIG.bannerFrequency.pagesPerBanner ===
@@ -670,6 +662,7 @@ export function App(): React.JSX.Element {
       }
 
       const nextPage = pagedReader.pages[nextPageIndex];
+      setPagedInteractionVisible(false);
       setPagedReader(current => movePagedReaderToPage(current, nextPageIndex));
 
       try {
@@ -694,6 +687,36 @@ export function App(): React.JSX.Element {
     ],
   );
 
+  const openPagedInteraction = useCallback((): void => {
+    if (!isBusy && canOpenPagedInteraction) {
+      setPagedInteractionVisible(true);
+    }
+  }, [canOpenPagedInteraction, isBusy]);
+
+  const closePagedInteraction = useCallback((): void => {
+    setPagedInteractionVisible(false);
+  }, []);
+
+  const advancePagedReader = useCallback((): void => {
+    if (!pageTransitionReady || isBusy) {
+      return;
+    }
+
+    if (pagedReader.currentPageIndex < pagedReader.pages.length - 1) {
+      void moveToPage(pagedReader.currentPageIndex + 1);
+      return;
+    }
+
+    openPagedInteraction();
+  }, [
+    isBusy,
+    moveToPage,
+    openPagedInteraction,
+    pageTransitionReady,
+    pagedReader.currentPageIndex,
+    pagedReader.pages.length,
+  ]);
+
   const pagePanResponder = useMemo(
     () =>
       PanResponder.create({
@@ -712,6 +735,11 @@ export function App(): React.JSX.Element {
             return;
           }
 
+          if (gestureState.dx < 0) {
+            advancePagedReader();
+            return;
+          }
+
           void moveToPage(
             pageAfterHorizontalSwipe(
               pagedReader.currentPageIndex,
@@ -722,6 +750,7 @@ export function App(): React.JSX.Element {
         },
       }),
     [
+      advancePagedReader,
       isBusy,
       moveToPage,
       pageTransitionReady,
@@ -761,6 +790,14 @@ export function App(): React.JSX.Element {
         }
         if (
           screen === 'reader' &&
+          readerMode === 'pages' &&
+          isPagedInteractionVisible
+        ) {
+          closePagedInteraction();
+          return true;
+        }
+        if (
+          screen === 'reader' &&
           snapshot?.isEnded === true &&
           readerMode === 'pages' &&
           pageTransitionReady &&
@@ -778,10 +815,12 @@ export function App(): React.JSX.Element {
     return () => subscription.remove();
   }, [
     catalogRestartTarget,
+    closePagedInteraction,
     exitStory,
     menuView,
     moveToPage,
     pageTransitionReady,
+    isPagedInteractionVisible,
     pagedReader.currentPageIndex,
     readerMode,
     screen,
@@ -1531,58 +1570,126 @@ export function App(): React.JSX.Element {
 
             {readerMode === 'pages' ? (
               <View style={styles.pageReaderContent}>
-                <View
-                  collapsable={false}
-                  onLayout={(event: LayoutChangeEvent) => {
-                    const {width, height} = event.nativeEvent.layout;
-                    setPagedReader(current =>
-                      updatePagedReaderGeometry(current, {
-                        width,
-                        height:
-                          height +
-                          (pageBannerActive ? bannerReservedHeight : 0),
-                        fontScale,
-                      }),
-                    );
-                  }}
-                  style={styles.pageBody}>
-                  {paginationRequest ? (
-                    <Text
-                      key={`measurement-${paginationRequest.key}`}
-                      maxFontSizeMultiplier={1.35}
-                      onTextLayout={(event: TextLayoutEvent) => {
-                        commitMeasuredLines(
-                          paginationRequest,
-                          event.nativeEvent.lines.map(line => line.text),
-                        );
-                      }}
-                      pointerEvents="none"
-                      style={styles.measureText}>
-                      {paginationRequest.text}
-                    </Text>
-                  ) : null}
+                {isPagedInteractionVisible ? (
+                  <>
+                    <ScrollView
+                      contentContainerStyle={styles.pagedInteractionContent}
+                      style={styles.pagedInteractionScroll}>
+                      {snapshot.isEnded
+                        ? renderEndingActions()
+                        : renderChoices(true)}
+                    </ScrollView>
 
-                  <View
-                    {...pagePanResponder.panHandlers}
-                    collapsable={false}
-                    style={[
-                      styles.pageTextArea,
-                      isInteractionPage && {
-                        paddingBottom: interactionReserve + PAGE_GAP,
-                      },
-                    ]}>
-                    {(currentPage?.paragraphs ?? []).map((paragraph, index) => (
-                      <Text
-                        key={`page-${currentPage?.key ?? 'empty'}-${index}`}
-                        maxFontSizeMultiplier={1.35}
-                        style={[styles.storyParagraph, {color: readerPalette.text}]}>
-                        {paragraph}
-                      </Text>
-                    ))}
-
-                    <View pointerEvents="box-none" style={styles.tapZones}>
+                    <View style={styles.pageFooter}>
                       <Pressable
                         accessibilityLabel={UI_STRINGS.previousPage}
+                        accessibilityRole="button"
+                        disabled={isBusy}
+                        onPress={closePagedInteraction}
+                        style={({pressed}) => [
+                          styles.pageNavButton,
+                          {borderColor: readerPalette.border},
+                          pressed && styles.buttonPressed,
+                          isBusy && styles.disabled,
+                        ]}>
+                        <Text
+                          style={[
+                            styles.pageNavText,
+                            {color: readerPalette.text},
+                          ]}>
+                          ←
+                        </Text>
+                      </Pressable>
+
+                      <View style={styles.pageFooterCenterSpacer} />
+                      <View style={styles.pageFooterButtonSpacer} />
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View
+                      collapsable={false}
+                      onLayout={(event: LayoutChangeEvent) => {
+                        const {width, height} = event.nativeEvent.layout;
+                        setPagedReader(current =>
+                          updatePagedReaderGeometry(current, {
+                            width,
+                            height:
+                              height +
+                              (pageBannerActive ? bannerReservedHeight : 0),
+                            fontScale,
+                          }),
+                        );
+                      }}
+                      style={styles.pageBody}>
+                      {paginationRequest ? (
+                        <Text
+                          key={`measurement-${paginationRequest.key}`}
+                          maxFontSizeMultiplier={1.35}
+                          onTextLayout={(event: TextLayoutEvent) => {
+                            commitMeasuredLines(
+                              paginationRequest,
+                              event.nativeEvent.lines.map(line => line.text),
+                            );
+                          }}
+                          pointerEvents="none"
+                          style={styles.measureText}>
+                          {paginationRequest.text}
+                        </Text>
+                      ) : null}
+
+                      <View
+                        {...pagePanResponder.panHandlers}
+                        collapsable={false}
+                        style={styles.pageTextArea}>
+                        {(pageTransitionReady
+                          ? currentPage?.paragraphs ?? []
+                          : []
+                        ).map((paragraph, index) => (
+                          <Text
+                            key={`page-${currentPage?.key ?? 'empty'}-${index}`}
+                            maxFontSizeMultiplier={1.35}
+                            style={[
+                              styles.storyParagraph,
+                              {color: readerPalette.text},
+                            ]}>
+                            {paragraph}
+                          </Text>
+                        ))}
+
+                        <View pointerEvents="box-none" style={styles.tapZones}>
+                          <Pressable
+                            accessibilityLabel={UI_STRINGS.previousPage}
+                            disabled={
+                              isBusy ||
+                              !pageTransitionReady ||
+                              pagedReader.currentPageIndex === 0
+                            }
+                            onPress={() => {
+                              void moveToPage(pagedReader.currentPageIndex - 1);
+                            }}
+                            style={styles.tapZone}
+                          />
+                          <Pressable
+                            accessibilityLabel={UI_STRINGS.nextPage}
+                            disabled={
+                              isBusy ||
+                              !pageTransitionReady ||
+                              (pagedReader.currentPageIndex >=
+                                pagedReader.pages.length - 1 &&
+                                !canOpenPagedInteraction)
+                            }
+                            onPress={advancePagedReader}
+                            style={styles.tapZone}
+                          />
+                        </View>
+                      </View>
+                    </View>
+
+                    <View style={styles.pageFooter}>
+                      <Pressable
+                        accessibilityLabel={UI_STRINGS.previousPage}
+                        accessibilityRole="button"
                         disabled={
                           isBusy ||
                           !pageTransitionReady ||
@@ -1591,90 +1698,66 @@ export function App(): React.JSX.Element {
                         onPress={() => {
                           void moveToPage(pagedReader.currentPageIndex - 1);
                         }}
-                        style={styles.tapZone}
-                      />
+                        style={({pressed}) => [
+                          styles.pageNavButton,
+                          {borderColor: readerPalette.border},
+                          pressed && styles.buttonPressed,
+                          (isBusy ||
+                            !pageTransitionReady ||
+                            pagedReader.currentPageIndex === 0) &&
+                            styles.disabled,
+                        ]}>
+                        <Text
+                          style={[
+                            styles.pageNavText,
+                            {color: readerPalette.text},
+                          ]}>
+                          ←
+                        </Text>
+                      </Pressable>
+
+                      <Text
+                        key={`page-counter-${displayedPageNumber ?? 'pending'}`}
+                        style={[
+                          styles.pageCounter,
+                          {color: readerPalette.muted},
+                        ]}>
+                        {displayedPageNumber ?? ''}
+                      </Text>
+
                       <Pressable
                         accessibilityLabel={UI_STRINGS.nextPage}
+                        accessibilityRole="button"
                         disabled={
                           isBusy ||
                           !pageTransitionReady ||
-                          pagedReader.currentPageIndex >=
-                            pagedReader.pages.length - 1
+                          (pagedReader.currentPageIndex >=
+                            pagedReader.pages.length - 1 &&
+                            !canOpenPagedInteraction)
                         }
-                        onPress={() => {
-                          void moveToPage(pagedReader.currentPageIndex + 1);
-                        }}
-                        style={styles.tapZone}
-                      />
+                        onPress={advancePagedReader}
+                        style={({pressed}) => [
+                          styles.pageNavButton,
+                          {borderColor: readerPalette.border},
+                          pressed && styles.buttonPressed,
+                          (isBusy ||
+                            !pageTransitionReady ||
+                            (pagedReader.currentPageIndex >=
+                              pagedReader.pages.length - 1 &&
+                              !canOpenPagedInteraction)) &&
+                            styles.disabled,
+                        ]}>
+                        <Text
+                          style={[
+                            styles.pageNavText,
+                            {color: readerPalette.text},
+                          ]}>
+                          →
+                        </Text>
+                      </Pressable>
                     </View>
-                  </View>
-
-                  {isInteractionPage ? (
-                    <View
-                      pointerEvents="auto"
-                      style={[
-                        styles.interactionDock,
-                        {height: interactionReserve},
-                      ]}>
-                      {isEndingPage ? renderEndingActions() : renderChoices(true)}
-                    </View>
-                  ) : null}
-                </View>
-
-                <View style={styles.pageFooter}>
-                  <Pressable
-                    accessibilityLabel={UI_STRINGS.previousPage}
-                    accessibilityRole="button"
-                    disabled={
-                      isBusy ||
-                      !pageTransitionReady ||
-                      pagedReader.currentPageIndex === 0
-                    }
-                    onPress={() => {
-                      void moveToPage(pagedReader.currentPageIndex - 1);
-                    }}
-                    style={({pressed}) => [
-                      styles.pageNavButton,
-                      {borderColor: readerPalette.border},
-                      pressed && styles.buttonPressed,
-                      (isBusy ||
-                        !pageTransitionReady ||
-                        pagedReader.currentPageIndex === 0) &&
-                        styles.disabled,
-                    ]}>
-                    <Text style={[styles.pageNavText, {color: readerPalette.text}]}>←</Text>
-                  </Pressable>
-
-                  <Text
-                    key={`page-counter-${displayedPageNumber ?? 'pending'}`}
-                    style={[styles.pageCounter, {color: readerPalette.muted}]}>
-                    {displayedPageNumber ?? ''}
-                  </Text>
-
-                  <Pressable
-                    accessibilityLabel={UI_STRINGS.nextPage}
-                    accessibilityRole="button"
-                    disabled={
-                      isBusy ||
-                      !pageTransitionReady ||
-                      pagedReader.currentPageIndex >= pagedReader.pages.length - 1
-                    }
-                    onPress={() => {
-                      void moveToPage(pagedReader.currentPageIndex + 1);
-                    }}
-                    style={({pressed}) => [
-                      styles.pageNavButton,
-                      {borderColor: readerPalette.border},
-                      pressed && styles.buttonPressed,
-                      (isBusy ||
-                        !pageTransitionReady ||
-                        pagedReader.currentPageIndex >=
-                          pagedReader.pages.length - 1) &&
-                        styles.disabled,
-                    ]}>
-                    <Text style={[styles.pageNavText, {color: readerPalette.text}]}>→</Text>
-                  </Pressable>
-                </View>
+                  </>
+                )}
               </View>
             ) : (
               <ScrollView
@@ -2072,14 +2155,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   tapZone: {flex: 1},
-  interactionDock: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: PAGE_VERTICAL_PADDING / 2,
-    justifyContent: 'flex-end',
-    zIndex: 3,
-  },
   pageFooter: {
     flexShrink: 0,
     minHeight: 54,
@@ -2098,6 +2173,14 @@ const styles = StyleSheet.create({
   },
   pageNavText: {fontSize: 20, lineHeight: 22, fontWeight: '700'},
   pageCounter: {fontSize: 13, lineHeight: 18, textAlign: 'center'},
+  pageFooterCenterSpacer: {flex: 1},
+  pageFooterButtonSpacer: {width: 56, minHeight: 42},
+  pagedInteractionScroll: {flex: 1},
+  pagedInteractionContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingVertical: 24,
+  },
   readerScroll: {flex: 1},
   readerContent: {
     paddingHorizontal: 20,
