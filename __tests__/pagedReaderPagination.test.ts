@@ -118,6 +118,67 @@ describe('deterministic paged reader model', () => {
     expect(state.pages[2].paragraphs).toHaveLength(2);
   });
 
+  test('prefers paragraph boundaries instead of splitting a short paragraph across pages', () => {
+    let state = updatePagedReaderGeometry(createPagedReaderState(), {
+      width: 360,
+      height: 124,
+      fontScale: 1,
+    });
+    const passages = [
+      'Первая строка.',
+      'Вторая строка.',
+      'Порыв ветра ударил дождём сбоку. Лера отвернулась и натянула капюшон ниже.',
+      'Следующий абзац.',
+    ];
+    const request = planPaginationMeasurement(state, passages, 0);
+    if (!request) {
+      throw new Error('Expected pagination request.');
+    }
+
+    const rawLines = [
+      '  Первая строка.\n',
+      '  Вторая строка.\n',
+      '  Порыв ветра ударил дождём сбоку.',
+      'Лера отвернулась и натянула капюшон ниже.\n',
+      '  Следующий абзац.',
+    ];
+    state = commitPaginationMeasurement(state, request, rawLines);
+
+    expect(state.pages[0].paragraphs).toEqual([
+      '  Первая строка.',
+      '  Вторая строка.',
+    ]);
+    expect(state.pages[1].paragraphs[0]).toContain(
+      'Порыв ветра ударил дождём сбоку. Лера отвернулась и натянула капюшон ниже.',
+    );
+  });
+
+  test('puts choices on a separate page instead of forcing a narrative fragment beside them', () => {
+    let state = updatePagedReaderGeometry(createPagedReaderState(), geometry);
+    const passages = [
+      'Первый абзац.',
+      'Второй абзац.',
+      'Третий абзац.',
+      'Четвёртый абзац.',
+      'Пятый абзац.',
+      'Шестой абзац.',
+    ];
+    const request = planPaginationMeasurement(
+      state,
+      passages,
+      getChoiceReserve(4),
+    );
+    if (!request) {
+      throw new Error('Expected pagination request.');
+    }
+
+    state = commitPaginationMeasurement(state, request, request.text.split('\n'));
+
+    const lastPage = state.pages[state.pages.length - 1];
+    expect(lastPage.paragraphs).toEqual([]);
+    expect(state.pages[state.pages.length - 2].paragraphs.length).toBeGreaterThan(0);
+  });
+
   test('real geometry change triggers full pagination and restores semantic position', () => {
     const passages = [
       'Один.',
