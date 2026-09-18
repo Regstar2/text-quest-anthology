@@ -153,7 +153,7 @@ describe('deterministic paged reader model', () => {
     );
   });
 
-  test('puts choices on a separate page instead of forcing a narrative fragment beside them', () => {
+  test('moves a complete prose tail onto the choice page instead of leaving it empty', () => {
     let state = updatePagedReaderGeometry(createPagedReaderState(), geometry);
     const passages = [
       'Первый абзац.',
@@ -174,9 +174,16 @@ describe('deterministic paged reader model', () => {
 
     state = commitPaginationMeasurement(state, request, request.text.split('\n'));
 
-    const lastPage = state.pages[state.pages.length - 1];
-    expect(lastPage.paragraphs).toEqual([]);
-    expect(state.pages[state.pages.length - 2].paragraphs.length).toBeGreaterThan(0);
+    const previousPage = state.pages[state.pages.length - 2];
+    const choicePage = state.pages[state.pages.length - 1];
+    expect(choicePage.paragraphs).toEqual(['  Шестой абзац.']);
+    expect(previousPage.paragraphs).toEqual([
+      '  Первый абзац.',
+      '  Второй абзац.',
+      '  Третий абзац.',
+      '  Четвёртый абзац.',
+      '  Пятый абзац.',
+    ]);
   });
 
   test('real geometry change triggers full pagination and restores semantic position', () => {
