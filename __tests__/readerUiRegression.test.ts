@@ -17,16 +17,24 @@ function source(path: string): string {
 }
 
 describe('v0.3.0 deterministic paged reader regressions', () => {
-  test('interaction dock is only mounted on the committed choice or ending page', () => {
+  test('choice and ending UI use a separate unnumbered interaction screen', () => {
     const app = source('src/app/AppV018Stable.tsx');
+    const pagination = source('src/app/PagedReaderPagination.ts');
 
-    expect(app).toContain('{isInteractionPage ? (');
-    expect(app).not.toContain('interactionDockHidden');
-    expect(app).toContain('isEndingPage ? renderEndingActions() : renderChoices(true)');
-    expect(app).toContain('const readerContentCommitted =');
     expect(app).toContain(
-      'pagedReader.processedPassageCount === readerParagraphs.length;',
+      'const [pagedInteractionVisible, setPagedInteractionVisible] = useState(false);',
     );
+    expect(app).toContain('const canOpenPagedInteraction =');
+    expect(app).toContain('const isPagedInteractionVisible =');
+    expect(app).toContain('{isPagedInteractionVisible ? (');
+    expect(app).toContain('styles.pagedInteractionContent');
+    expect(app).toContain('? renderEndingActions()');
+    expect(app).toContain(': renderChoices(true)');
+    expect(app).toContain('setPagedInteractionVisible(true);');
+    expect(app).toContain('setPagedInteractionVisible(false);');
+    expect(app).not.toContain('interactionDock');
+    expect(pagination).not.toContain('interactionReserve');
+    expect(pagination).not.toContain('getChoiceReserve');
   });
 
   test('choice transition advances from the single canonical page index', () => {
@@ -73,11 +81,13 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(app).not.toContain('.current = {');
   });
 
-  test('page number is derived exclusively from currentPageIndex plus one', () => {
+  test('physical page number is derived from the canonical index and hidden on interaction screens', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
+    expect(app).toContain('!isPagedInteractionVisible && pageTransitionReady');
     expect(app).toContain('pagedReader.currentPageIndex + 1');
     expect(app).toContain('{displayedPageNumber ?? \'\'}');
+    expect(app).toContain('styles.pageFooterCenterSpacer');
     expect(app).not.toContain('lastPageNumberRef');
     expect(app).not.toContain('pageOrdinal');
     expect(app).not.toContain('const [pageNumber, setPageNumber]');
@@ -134,6 +144,7 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     const yandexAds = source('src/ads/yandex/YandexAdsProvider.tsx');
 
     expect(app).toContain('const reservePagedBannerSlot = pageBannerActive;');
+    expect(app).toContain('!isPagedInteractionVisible &&');
     expect(app).toContain('(pageBannerActive ? bannerReservedHeight : 0),');
     expect(app).toContain('ADS_CONFIG.bannerFrequency.pagesPerBanner,');
     expect(app).toContain(
@@ -177,12 +188,24 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
       'source => !source.text.startsWith(FORCED_PAGE_BREAK_MARKER)',
     );
     expect(pagination).toContain('return insertSyntheticPageBreaks(sources, lines);');
-    expect(pagination).toContain(
-      'getPageBreakReserve(measuredLines[index].text)',
-    );
+    expect(pagination).not.toContain('getPageBreakReserve');
+    expect(pagination).not.toContain('interactionReserve');
     expect(app).toContain(
       '!passage.startsWith(FORCED_PAGE_BREAK_MARKER)',
     );
+  });
+
+  test('forward navigation opens interaction without consuming a physical page number', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).toContain(
+      'if (pagedReader.currentPageIndex < pagedReader.pages.length - 1) {',
+    );
+    expect(app).toContain('void moveToPage(pagedReader.currentPageIndex + 1);');
+    expect(app).toContain('openPagedInteraction();');
+    expect(app).toContain('onPress={advancePagedReader}');
+    expect(app).toContain('onPress={closePagedInteraction}');
+    expect(app).not.toContain('setPagedReader(current => movePagedReaderToPage(current, pagedReader.pages.length))');
   });
 
   test('semantic reader anchor is part of snapshot and persistent save data', () => {
