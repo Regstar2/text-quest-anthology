@@ -11,7 +11,6 @@ export const ENDING_ACTIONS_RESERVE = 116;
 export const PARAGRAPH_INDENT = '\u2003\u2003';
 export const FORCED_PAGE_BREAK_MARKER = '\uE001';
 
-const MIN_CHOICE_PAGE_LINES = 3;
 const CHOICE_ROW_RESERVE = 78;
 const PARAGRAPH_BREAK_MARKER = '\uE000';
 
@@ -492,56 +491,92 @@ function paginateTail(
   let cursor = 0;
   let pageIndex = pageIndexOffset;
 
-  if (interactionReserve <= 0) {
-    while (cursor < measuredLines.length) {
-      const capacity = getPageLineCapacity(
-        contentHeight,
-        pageIndex,
-        bannerReserve,
-        pagesPerBanner,
-        0,
-      );
-      pages.push(measuredLines.slice(cursor, cursor + capacity));
-      cursor += capacity;
-      pageIndex += 1;
-    }
-    return pages;
-  }
-
   while (cursor < measuredLines.length) {
-    const remaining = measuredLines.length - cursor;
-    const interactionCapacity = getPageLineCapacity(
-      contentHeight,
-      pageIndex,
-      bannerReserve,
-      pagesPerBanner,
-      interactionReserve,
-    );
-
-    if (remaining <= interactionCapacity) {
-      pages.push(measuredLines.slice(cursor));
-      break;
-    }
-
-    const normalCapacity = getPageLineCapacity(
+    const capacity = getPageLineCapacity(
       contentHeight,
       pageIndex,
       bannerReserve,
       pagesPerBanner,
       0,
     );
-    const minimumInteractionLines = Math.min(
-      remaining,
-      MIN_CHOICE_PAGE_LINES,
-    );
-    const maximumTake = Math.max(1, remaining - minimumInteractionLines);
-    const take = Math.max(1, Math.min(normalCapacity, maximumTake));
+    const take = chooseNarrativePageTake(measuredLines, cursor, capacity);
     pages.push(measuredLines.slice(cursor, cursor + take));
     cursor += take;
     pageIndex += 1;
   }
 
+  if (interactionReserve <= 0) {
+    return pages;
+  }
+
+  const lastPageIndex = pageIndexOffset + pages.length - 1;
+  const lastPage = pages[pages.length - 1];
+  const interactionCapacity = getPageLineCapacity(
+    contentHeight,
+    lastPageIndex,
+    bannerReserve,
+    pagesPerBanner,
+    interactionReserve,
+  );
+
+  if (lastPage.length <= interactionCapacity) {
+    return pages;
+  }
+
+  const finalLine = measuredLines[measuredLines.length - 1];
+  pages.push([
+    Object.freeze({
+      text: '',
+      anchor: Object.freeze({...finalLine.anchor}),
+    }),
+  ]);
   return pages;
+}
+
+function chooseNarrativePageTake(
+  lines: readonly AnchoredMeasuredLine[],
+  cursor: number,
+  capacity: number,
+): number {
+  const remaining = lines.length - cursor;
+  if (remaining <= capacity) {
+    return remaining;
+  }
+
+  const minimumPreferredTake = Math.max(2, Math.floor(capacity * 0.55));
+
+  for (let take = capacity; take >= minimumPreferredTake; take -= 1) {
+    if (isParagraphBoundary(lines, cursor + take)) {
+      return take;
+    }
+  }
+
+  for (let take = capacity; take >= minimumPreferredTake; take -= 1) {
+    if (isSentenceBoundary(lines[cursor + take - 1].text)) {
+      return take;
+    }
+  }
+
+  return capacity;
+}
+
+function isParagraphBoundary(
+  lines: readonly AnchoredMeasuredLine[],
+  nextLineIndex: number,
+): boolean {
+  if (nextLineIndex <= 0 || nextLineIndex >= lines.length) {
+    return true;
+  }
+
+  return (
+    lines[nextLineIndex - 1].anchor.passageIndex !==
+    lines[nextLineIndex].anchor.passageIndex
+  );
+}
+
+function isSentenceBoundary(line: string): boolean {
+  const visible = line.split(PARAGRAPH_BREAK_MARKER).join('').trim();
+  return /[.!?…](?:["»”')\\]]+)?$/.test(visible);
 }
 
 function getPageLineCapacity(
