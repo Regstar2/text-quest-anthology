@@ -4,14 +4,11 @@ import {
 } from '../narrative/ReaderPosition';
 
 export const STORY_LINE_HEIGHT = 28;
-export const PAGE_GAP = 12;
 export const PAGE_VERTICAL_PADDING = 12;
 export const CHOICE_GAP = 8;
-export const ENDING_ACTIONS_RESERVE = 116;
 export const PARAGRAPH_INDENT = '\u2003\u2003';
 export const FORCED_PAGE_BREAK_MARKER = '\uE001';
 
-const CHOICE_ROW_RESERVE = 78;
 const PARAGRAPH_BREAK_MARKER = '\uE000';
 
 export type ReaderPageGeometry = Readonly<{
@@ -47,7 +44,6 @@ export type PaginationMeasurementRequest = Readonly<{
   sourcePassageCount: number;
   sources: readonly ReaderSourcePassage[];
   text: string;
-  interactionReserve: number;
   bannerReserve: number;
   pagesPerBanner: number;
   restoreAnchor: ReaderSemanticAnchor | null;
@@ -132,7 +128,6 @@ export function movePagedReaderToPage(
 export function planPaginationMeasurement(
   state: PagedReaderState,
   passages: readonly string[],
-  interactionReserve: number,
   bannerReserve = 0,
   pagesPerBanner = 0,
 ): PaginationMeasurementRequest | null {
@@ -188,7 +183,6 @@ export function planPaginationMeasurement(
     sourcePassageCount: passages.length,
     sources: Object.freeze(sources),
     text,
-    interactionReserve: Math.max(0, interactionReserve),
     bannerReserve: normalizedBannerReserve,
     pagesPerBanner: normalizedPagesPerBanner,
     restoreAnchor: state.restoreAnchor,
@@ -222,7 +216,6 @@ export function commitPaginationMeasurement(
   const measuredPages = paginateMeasuredLines(
     measuredLines,
     request.geometry.height,
-    request.interactionReserve,
     request.bannerReserve,
     request.pagesPerBanner,
     request.geometryRevision,
@@ -262,17 +255,6 @@ export function commitPaginationMeasurement(
     restoreAnchor: null,
     fallbackPageIndex: currentPageIndex,
   };
-}
-
-export function getChoiceReserve(choiceCount: number): number {
-  if (choiceCount <= 0) {
-    return 0;
-  }
-
-  return (
-    choiceCount * CHOICE_ROW_RESERVE +
-    Math.max(0, choiceCount - 1) * CHOICE_GAP
-  );
 }
 
 export function indentReaderParagraph(paragraph: string): string {
@@ -412,7 +394,6 @@ function normalizeMeasuredLine(line: string): string {
 function paginateMeasuredLines(
   measuredLines: readonly AnchoredMeasuredLine[],
   pageHeight: number,
-  interactionReserve: number,
   bannerReserve: number,
   pagesPerBanner: number,
   geometryRevision: number,
@@ -440,7 +421,6 @@ function paginateMeasuredLines(
       const segmentPages = paginateTail(
         segment,
         contentHeight,
-        getPageBreakReserve(measuredLines[index].text),
         bannerReserve,
         pagesPerBanner,
         nextPageIndex,
@@ -456,7 +436,6 @@ function paginateMeasuredLines(
     const tailPages = paginateTail(
       tail,
       contentHeight,
-      interactionReserve,
       bannerReserve,
       pagesPerBanner,
       nextPageIndex,
@@ -478,7 +457,6 @@ function paginateMeasuredLines(
 function paginateTail(
   measuredLines: readonly AnchoredMeasuredLine[],
   contentHeight: number,
-  interactionReserve: number,
   bannerReserve: number,
   pagesPerBanner: number,
   pageIndexOffset: number,
@@ -497,7 +475,6 @@ function paginateTail(
       pageIndex,
       bannerReserve,
       pagesPerBanner,
-      0,
     );
     const take = chooseNarrativePageTake(measuredLines, cursor, capacity);
     pages.push(measuredLines.slice(cursor, cursor + take));
@@ -505,73 +482,7 @@ function paginateTail(
     pageIndex += 1;
   }
 
-  if (interactionReserve <= 0) {
-    return pages;
-  }
-
-  const lastPageIndex = pageIndexOffset + pages.length - 1;
-  const lastPage = pages[pages.length - 1];
-  const interactionCapacity = getPageLineCapacity(
-    contentHeight,
-    lastPageIndex,
-    bannerReserve,
-    pagesPerBanner,
-    interactionReserve,
-  );
-
-  if (lastPage.length <= interactionCapacity) {
-    return pages;
-  }
-
-  const interactionPageIndex = pageIndexOffset + pages.length;
-  const nextInteractionCapacity = getPageLineCapacity(
-    contentHeight,
-    interactionPageIndex,
-    bannerReserve,
-    pagesPerBanner,
-    interactionReserve,
-  );
-  const splitIndex = findReadableTailStart(lastPage, nextInteractionCapacity);
-
-  if (splitIndex !== null) {
-    pages[pages.length - 1] = lastPage.slice(0, splitIndex);
-    pages.push(lastPage.slice(splitIndex));
-    return pages;
-  }
-
-  const finalLine = measuredLines[measuredLines.length - 1];
-  pages.push([
-    Object.freeze({
-      text: '',
-      anchor: Object.freeze({...finalLine.anchor}),
-    }),
-  ]);
   return pages;
-}
-
-function findReadableTailStart(
-  lines: readonly AnchoredMeasuredLine[],
-  capacity: number,
-): number | null {
-  if (lines.length <= 1 || capacity <= 0) {
-    return null;
-  }
-
-  const earliestStart = Math.max(1, lines.length - capacity);
-
-  for (let start = earliestStart; start < lines.length; start += 1) {
-    if (isParagraphBoundary(lines, start)) {
-      return start;
-    }
-  }
-
-  for (let start = earliestStart; start < lines.length; start += 1) {
-    if (isSentenceBoundary(lines[start - 1].text)) {
-      return start;
-    }
-  }
-
-  return null;
 }
 
 function chooseNarrativePageTake(
@@ -625,19 +536,16 @@ function getPageLineCapacity(
   pageIndex: number,
   bannerReserve: number,
   pagesPerBanner: number,
-  interactionReserve: number,
 ): number {
   const reservedForBanner = getPageBannerReserve(
     pageIndex,
     bannerReserve,
     pagesPerBanner,
   );
-  const reservedForInteraction =
-    interactionReserve > 0 ? interactionReserve + PAGE_GAP : 0;
   return Math.max(
     1,
     Math.floor(
-      (contentHeight - reservedForBanner - reservedForInteraction) /
+      (contentHeight - reservedForBanner) /
         STORY_LINE_HEIGHT,
     ),
   );
@@ -718,17 +626,6 @@ function pageLinesToParagraphs(lines: readonly string[]): string[] {
   }
 
   return paragraphs;
-}
-
-function getPageBreakReserve(line: string): number {
-  const markerIndex = line.indexOf(FORCED_PAGE_BREAK_MARKER);
-  if (markerIndex < 0) {
-    return 0;
-  }
-
-  const suffix = line.slice(markerIndex + FORCED_PAGE_BREAK_MARKER.length);
-  const match = /^:(\d+)/.exec(suffix);
-  return match ? getChoiceReserve(Number(match[1])) : 0;
 }
 
 function restorePageIndex(
