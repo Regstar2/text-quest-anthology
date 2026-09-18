@@ -2,7 +2,6 @@ import {
   FORCED_PAGE_BREAK_MARKER,
   commitPaginationMeasurement,
   createPagedReaderState,
-  getChoiceReserve,
   movePagedReaderToPage,
   planPaginationMeasurement,
   resetPagedReaderState,
@@ -53,11 +52,7 @@ describe('deterministic paged reader model', () => {
       'Новая сцена после выбора.',
       'Продолжение новой сцены.',
     ];
-    const request = planPaginationMeasurement(
-      initial,
-      nextPassages,
-      getChoiceReserve(2),
-    );
+    const request = planPaginationMeasurement(initial, nextPassages);
     expect(request?.kind).toBe('append');
     expect(request?.startPassageIndex).toBe(firstPassages.length);
     expect(request?.text).not.toContain(FORCED_PAGE_BREAK_MARKER);
@@ -105,7 +100,7 @@ describe('deterministic paged reader model', () => {
   test('banner reserve reduces only deterministic banner pages', () => {
     let state = updatePagedReaderGeometry(createPagedReaderState(), geometry);
     const passages = Array.from({length: 12}, (_, index) => `Строка ${index + 1}.`);
-    const request = planPaginationMeasurement(state, passages, 0, 56, 2);
+    const request = planPaginationMeasurement(state, passages, 56, 2);
     if (!request) {
       throw new Error('Expected pagination request.');
     }
@@ -153,7 +148,7 @@ describe('deterministic paged reader model', () => {
     );
   });
 
-  test('moves a complete prose tail onto the choice page instead of leaving it empty', () => {
+  test('choice boundaries do not reserve or redistribute narrative page space', () => {
     let state = updatePagedReaderGeometry(createPagedReaderState(), geometry);
     const passages = [
       'Первый абзац.',
@@ -162,28 +157,25 @@ describe('deterministic paged reader model', () => {
       'Четвёртый абзац.',
       'Пятый абзац.',
       'Шестой абзац.',
+      `${FORCED_PAGE_BREAK_MARKER}:4`,
+      'Новая сцена.',
     ];
-    const request = planPaginationMeasurement(
-      state,
-      passages,
-      getChoiceReserve(4),
-    );
+    const request = planPaginationMeasurement(state, passages);
     if (!request) {
       throw new Error('Expected pagination request.');
     }
 
     state = commitPaginationMeasurement(state, request, request.text.split('\n'));
 
-    const previousPage = state.pages[state.pages.length - 2];
-    const choicePage = state.pages[state.pages.length - 1];
-    expect(choicePage.paragraphs).toEqual(['  Шестой абзац.']);
-    expect(previousPage.paragraphs).toEqual([
+    expect(state.pages[0].paragraphs).toEqual([
       '  Первый абзац.',
       '  Второй абзац.',
       '  Третий абзац.',
       '  Четвёртый абзац.',
       '  Пятый абзац.',
+      '  Шестой абзац.',
     ]);
+    expect(state.pages[1].paragraphs).toEqual(['  Новая сцена.']);
   });
 
   test('real geometry change triggers full pagination and restores semantic position', () => {
