@@ -74,12 +74,22 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(app).not.toContain('pageOrdinalRef');
   });
 
-  test('page measurement stays offscreen and commits immutable physical pages', () => {
+  test('page measurement stays offscreen, survives interaction screens and commits immutable physical pages', () => {
     const app = source('src/app/AppV018Stable.tsx');
+    const pagesRenderStart = app.indexOf("{readerMode === 'pages' ? (");
+    const measurementIndex = app.indexOf(
+      'key={`measurement-${paginationRequest.key}`}',
+      pagesRenderStart,
+    );
+    const interactionIndex = app.indexOf(
+      '{isPagedInteractionVisible ? (',
+      pagesRenderStart,
+    );
 
     expect(app).toContain('top: -10000');
     expect(app).toContain("color: 'transparent'");
-    expect(app).toContain('key={`measurement-${paginationRequest.key}`}');
+    expect(measurementIndex).toBeGreaterThan(pagesRenderStart);
+    expect(measurementIndex).toBeLessThan(interactionIndex);
     expect(app).toContain(
       'commitPaginationMeasurement(current, request, lines)',
     );
