@@ -24,17 +24,39 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(app).toContain(
       'const [pagedInteractionVisible, setPagedInteractionVisible] = useState(false);',
     );
+    expect(app).toContain('pagedInteractionSnapshot');
+    expect(app).toContain('pagedInteractionTargetPassageCount');
     expect(app).toContain('const canOpenPagedInteraction =');
     expect(app).toContain('const isPagedInteractionVisible =');
     expect(app).toContain('{isPagedInteractionVisible ? (');
     expect(app).toContain('styles.pagedInteractionContent');
-    expect(app).toContain('? renderEndingActions()');
-    expect(app).toContain(': renderChoices(true)');
+    expect(app).toContain('(pagedInteractionSnapshot ?? snapshot).isEnded');
+    expect(app).toContain('pagedInteractionSnapshot ?? snapshot');
     expect(app).toContain('setPagedInteractionVisible(true);');
     expect(app).toContain('setPagedInteractionVisible(false);');
     expect(app).not.toContain('interactionDock');
     expect(pagination).not.toContain('interactionReserve');
     expect(pagination).not.toContain('getChoiceReserve');
+  });
+
+  test('choice screen remains mounted until appended narrative pages are committed', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).toContain(
+      'setPagedInteractionTargetPassageCount(result.snapshot.passages.length);',
+    );
+    expect(app).toContain(
+      'pagedReader.processedPassageCount < pagedInteractionTargetPassageCount',
+    );
+    expect(app).toContain('paginationRequest !== null');
+    expect(app).toContain('setPagedInteractionSnapshot(snapshot);');
+    expect(app).toContain('!pagedInteractionTransitionPending');
+    expect(app).toContain(
+      'disabled={isBusy || pagedInteractionTransitionPending}',
+    );
+    expect(app).not.toContain(
+      'setPagedInteractionVisible(false);\n      setSnapshot(result.snapshot);',
+    );
   });
 
   test('choice transition advances from the single canonical page index', () => {
