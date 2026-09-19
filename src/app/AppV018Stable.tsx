@@ -129,6 +129,12 @@ export function App(): React.JSX.Element {
   const [paginationRequest, setPaginationRequest] =
     useState<PaginationMeasurementRequest | null>(null);
   const [pagedInteractionVisible, setPagedInteractionVisible] = useState(false);
+  const [pagedInteractionSnapshot, setPagedInteractionSnapshot] =
+    useState<StoryReaderSnapshot | null>(null);
+  const [
+    pagedInteractionTargetPassageCount,
+    setPagedInteractionTargetPassageCount,
+  ] = useState<number | null>(null);
   const [feedBannerVisible, setFeedBannerVisible] = useState(false);
 
   const readerPalette = resolveReaderPalette(readerPreferences.theme, systemDark);
@@ -145,6 +151,8 @@ export function App(): React.JSX.Element {
       );
       setPaginationRequest(null);
       setPagedInteractionVisible(false);
+      setPagedInteractionSnapshot(null);
+      setPagedInteractionTargetPassageCount(null);
     },
     [],
   );
@@ -495,7 +503,9 @@ export function App(): React.JSX.Element {
 
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
-      setPagedInteractionVisible(false);
+      if (readerMode === 'pages' && pagedInteractionVisible) {
+        setPagedInteractionTargetPassageCount(result.snapshot.passages.length);
+      }
       setSnapshot(result.snapshot);
       setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
 
@@ -616,8 +626,12 @@ export function App(): React.JSX.Element {
     pageTransitionReady &&
     pagedReader.currentPageIndex === pagedReader.pages.length - 1 &&
     (snapshot?.isEnded === true || Boolean(snapshot?.choices.length));
+  const pagedInteractionTransitionPending =
+    pagedInteractionTargetPassageCount !== null;
   const isPagedInteractionVisible =
-    pagedInteractionVisible && canOpenPagedInteraction;
+    readerMode === 'pages' &&
+    pagedInteractionVisible &&
+    (pagedInteractionTransitionPending || canOpenPagedInteraction);
   const displayedPageNumber =
     !isPagedInteractionVisible && pageTransitionReady
       ? pagedReader.currentPageIndex + 1
@@ -638,6 +652,26 @@ export function App(): React.JSX.Element {
       : screen === 'reader' && feedBannerVisible);
   const reservePagedBannerSlot = pageBannerActive;
   const isBusy = isLoading || isMutating;
+
+  useEffect(() => {
+    if (
+      readerMode !== 'pages' ||
+      pagedInteractionTargetPassageCount === null ||
+      paginationRequest !== null ||
+      pagedReader.processedPassageCount < pagedInteractionTargetPassageCount
+    ) {
+      return;
+    }
+
+    setPagedInteractionVisible(false);
+    setPagedInteractionSnapshot(null);
+    setPagedInteractionTargetPassageCount(null);
+  }, [
+    pagedInteractionTargetPassageCount,
+    pagedReader.processedPassageCount,
+    paginationRequest,
+    readerMode,
+  ]);
 
   const moveToPage = useCallback(
     async (requestedPageIndex: number) => {
@@ -663,6 +697,8 @@ export function App(): React.JSX.Element {
 
       const nextPage = pagedReader.pages[nextPageIndex];
       setPagedInteractionVisible(false);
+      setPagedInteractionSnapshot(null);
+      setPagedInteractionTargetPassageCount(null);
       setPagedReader(current => movePagedReaderToPage(current, nextPageIndex));
 
       try {
@@ -688,14 +724,22 @@ export function App(): React.JSX.Element {
   );
 
   const openPagedInteraction = useCallback((): void => {
-    if (!isBusy && canOpenPagedInteraction) {
+    if (!isBusy && canOpenPagedInteraction && snapshot) {
+      setPagedInteractionSnapshot(snapshot);
+      setPagedInteractionTargetPassageCount(null);
       setPagedInteractionVisible(true);
     }
-  }, [canOpenPagedInteraction, isBusy]);
+  }, [canOpenPagedInteraction, isBusy, snapshot]);
 
   const closePagedInteraction = useCallback((): void => {
+    if (pagedInteractionTransitionPending) {
+      return;
+    }
+
     setPagedInteractionVisible(false);
-  }, []);
+    setPagedInteractionSnapshot(null);
+    setPagedInteractionTargetPassageCount(null);
+  }, [pagedInteractionTransitionPending]);
 
   const advancePagedReader = useCallback((): void => {
     if (!pageTransitionReady || isBusy) {
@@ -844,14 +888,21 @@ export function App(): React.JSX.Element {
     );
   };
 
-  const renderChoices = (enabled: boolean) => {
-    if (!snapshot || snapshot.choices.length === 0 || snapshot.isEnded) {
+  const renderChoices = (
+    enabled: boolean,
+    sourceSnapshot: StoryReaderSnapshot | null = snapshot,
+  ) => {
+    if (
+      !sourceSnapshot ||
+      sourceSnapshot.choices.length === 0 ||
+      sourceSnapshot.isEnded
+    ) {
       return null;
     }
 
     return (
       <View accessibilityLabel={UI_STRINGS.choicesLabel} style={styles.choicesZone}>
-        {snapshot.choices.map((choice, ordinal) => {
+        {sourceSnapshot.choices.map((choice, ordinal) => {
           const choiceEnabled = enabled && choice.enabled;
           const label = choice.enabled ? choice.text : `🔒  ${choice.text}`;
 
@@ -1575,22 +1626,26 @@ export function App(): React.JSX.Element {
                     <ScrollView
                       contentContainerStyle={styles.pagedInteractionContent}
                       style={styles.pagedInteractionScroll}>
-                      {snapshot.isEnded
+                      {(pagedInteractionSnapshot ?? snapshot).isEnded
                         ? renderEndingActions()
-                        : renderChoices(true)}
+                        : renderChoices(
+                            !pagedInteractionTransitionPending,
+                            pagedInteractionSnapshot ?? snapshot,
+                          )}
                     </ScrollView>
 
                     <View style={styles.pageFooter}>
                       <Pressable
                         accessibilityLabel={UI_STRINGS.previousPage}
                         accessibilityRole="button"
-                        disabled={isBusy}
+                        disabled={isBusy || pagedInteractionTransitionPending}
                         onPress={closePagedInteraction}
                         style={({pressed}) => [
                           styles.pageNavButton,
                           {borderColor: readerPalette.border},
                           pressed && styles.buttonPressed,
-                          isBusy && styles.disabled,
+                          (isBusy || pagedInteractionTransitionPending) &&
+                            styles.disabled,
                         ]}>
                         <Text
                           style={[
