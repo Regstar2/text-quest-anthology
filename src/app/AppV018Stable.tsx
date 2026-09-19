@@ -1621,6 +1621,22 @@ export function App(): React.JSX.Element {
 
             {readerMode === 'pages' ? (
               <View style={styles.pageReaderContent}>
+                {paginationRequest ? (
+                  <Text
+                    key={`measurement-${paginationRequest.key}`}
+                    maxFontSizeMultiplier={1.35}
+                    onTextLayout={(event: TextLayoutEvent) => {
+                      commitMeasuredLines(
+                        paginationRequest,
+                        event.nativeEvent.lines.map(line => line.text),
+                      );
+                    }}
+                    pointerEvents="none"
+                    style={styles.measureText}>
+                    {paginationRequest.text}
+                  </Text>
+                ) : null}
+
                 {isPagedInteractionVisible ? (
                   <>
                     <ScrollView
@@ -1677,22 +1693,6 @@ export function App(): React.JSX.Element {
                         );
                       }}
                       style={styles.pageBody}>
-                      {paginationRequest ? (
-                        <Text
-                          key={`measurement-${paginationRequest.key}`}
-                          maxFontSizeMultiplier={1.35}
-                          onTextLayout={(event: TextLayoutEvent) => {
-                            commitMeasuredLines(
-                              paginationRequest,
-                              event.nativeEvent.lines.map(line => line.text),
-                            );
-                          }}
-                          pointerEvents="none"
-                          style={styles.measureText}>
-                          {paginationRequest.text}
-                        </Text>
-                      ) : null}
-
                       <View
                         {...pagePanResponder.panHandlers}
                         collapsable={false}
@@ -2175,6 +2175,7 @@ const styles = StyleSheet.create({
   pageReaderContent: {
     flex: 1,
     minHeight: 0,
+    position: 'relative',
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 4,
