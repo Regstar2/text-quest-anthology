@@ -195,7 +195,7 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(pagination).toContain('function getPageBannerReserve(');
     expect(pagination).toContain('bannerReserve,\n  });');
 
-    expect(yandexAds).toContain('new NativeEventEmitter(');
+    expect(yandexAds).toContain('DeviceEventEmitter.addListener(');
     expect(yandexAds).toContain("event.state === 'loaded' || event.state === 'shown'");
     expect(yandexAds).toContain("event.state === 'failed'");
     expect(yandexAds).toContain('visible && readyHeight > 0 ? readyHeight : 0');
