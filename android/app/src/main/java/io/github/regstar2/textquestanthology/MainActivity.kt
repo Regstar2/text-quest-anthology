@@ -137,7 +137,7 @@ class MainActivity : ReactActivity() {
                 object : BannerAdEventListener {
                     override fun onAdLoaded() {
                         if (isDestroyed) {
-                            destroy()
+                            bannerAdView?.destroy()
                             return
                         }
 
