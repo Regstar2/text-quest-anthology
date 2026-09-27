@@ -109,8 +109,56 @@ describe('deterministic paged reader model', () => {
 
     expect(state.pages).toHaveLength(3);
     expect(state.pages[0].paragraphs).toHaveLength(6);
+    expect(state.pages[0].bannerReserve).toBe(0);
     expect(state.pages[1].paragraphs).toHaveLength(4);
+    expect(state.pages[1].bannerReserve).toBe(56);
     expect(state.pages[2].paragraphs).toHaveLength(2);
+    expect(state.pages[2].bannerReserve).toBe(0);
+  });
+
+  test('late banner readiness affects only newly appended physical pages', () => {
+    const firstPassages = Array.from(
+      {length: 12},
+      (_, index) => `Строка ${index + 1}.`,
+    );
+    let state = updatePagedReaderGeometry(createPagedReaderState(), geometry);
+    const firstRequest = planPaginationMeasurement(state, firstPassages, 0, 3);
+    if (!firstRequest) {
+      throw new Error('Expected initial pagination request.');
+    }
+
+    state = commitPaginationMeasurement(
+      state,
+      firstRequest,
+      firstRequest.text.split('\n'),
+    );
+    const committedPages = state.pages;
+
+    expect(state.pages).toHaveLength(2);
+    expect(state.pages.every(page => page.bannerReserve === 0)).toBe(true);
+    expect(planPaginationMeasurement(state, firstPassages, 56, 3)).toBeNull();
+
+    const nextPassages = [
+      ...firstPassages,
+      'Новая строка 13.',
+      'Новая строка 14.',
+      'Новая строка 15.',
+      'Новая строка 16.',
+    ];
+    const appendRequest = planPaginationMeasurement(state, nextPassages, 56, 3);
+    if (!appendRequest) {
+      throw new Error('Expected append pagination request.');
+    }
+
+    const appended = commitPaginationMeasurement(
+      state,
+      appendRequest,
+      appendRequest.text.split('\n'),
+    );
+
+    expect(appended.pages[0]).toBe(committedPages[0]);
+    expect(appended.pages[1]).toBe(committedPages[1]);
+    expect(appended.pages[2].bannerReserve).toBe(56);
   });
 
   test('prefers paragraph boundaries instead of splitting a short paragraph across pages', () => {
