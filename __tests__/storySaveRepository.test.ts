@@ -1,17 +1,24 @@
 import {
   StorySaveRepository,
+  type ReaderCursor,
   type StorySave,
   type StorySaveStorage,
 } from '../src/persistence/StorySaveRepository';
 
 class MemoryStorySaveStorage implements StorySaveStorage {
   private readonly values = new Map<string, string>();
+  readonly deferredWrites: string[] = [];
 
   async getItem(key: string): Promise<string | null> {
     return this.values.get(key) ?? null;
   }
 
   async setItem(key: string, value: string): Promise<void> {
+    this.values.set(key, value);
+  }
+
+  async setItemDeferred(key: string, value: string): Promise<void> {
+    this.deferredWrites.push(key);
     this.values.set(key, value);
   }
 
@@ -54,6 +61,31 @@ describe('StorySaveRepository', () => {
     await expect(repository.load('story-a')).resolves.toEqual({
       status: 'loaded',
       save,
+    });
+  });
+
+  test('reader cursor uses a separate deferred sidecar record', async () => {
+    const storage = new MemoryStorySaveStorage();
+    const repository = new StorySaveRepository(storage);
+    const cursor: ReaderCursor = {
+      storyId: 'story-a',
+      storyContentVersion: 1,
+      narrativeRevision: 3,
+      pageIndex: 7,
+      pageAnchor: {passageIndex: 4, characterOffset: 11},
+    };
+
+    await repository.saveReaderCursor('story-a', cursor);
+
+    expect(storage.deferredWrites).toEqual([
+      'text-quest-anthology.reader-cursor.story-a',
+    ]);
+    await expect(repository.loadReaderCursor('story-a')).resolves.toEqual({
+      status: 'loaded',
+      cursor,
+    });
+    await expect(repository.load('story-a')).resolves.toEqual({
+      status: 'not-found',
     });
   });
 
@@ -161,9 +193,19 @@ describe('StorySaveRepository', () => {
 
     await repository.save('story-a', firstSave);
     await repository.save('story-b', secondSave);
+    await repository.saveReaderCursor('story-a', {
+      storyId: 'story-a',
+      storyContentVersion: 1,
+      narrativeRevision: 0,
+      pageIndex: 2,
+      pageAnchor: null,
+    });
     await repository.delete('story-a');
 
     await expect(repository.load('story-a')).resolves.toEqual({
+      status: 'not-found',
+    });
+    await expect(repository.loadReaderCursor('story-a')).resolves.toEqual({
       status: 'not-found',
     });
     await expect(repository.load('story-b')).resolves.toEqual({
