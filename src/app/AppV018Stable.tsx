@@ -500,7 +500,7 @@ export function App(): React.JSX.Element {
       readerMode === 'pages' ? pagedReader.currentPageIndex + 1 : undefined;
 
     try {
-      const result = await session.choose(choiceIndex, nextReaderPageIndex);
+      const result = session.choose(choiceIndex, nextReaderPageIndex);
 
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
@@ -508,7 +508,6 @@ export function App(): React.JSX.Element {
         setPagedInteractionTargetPassageCount(result.snapshot.passages.length);
       }
       setSnapshot(result.snapshot);
-      setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
 
       if (readerMode === 'feed') {
         const nextChoiceCount = feedChoiceCountRef.current + 1;
@@ -523,6 +522,9 @@ export function App(): React.JSX.Element {
       }
 
       setScreen('reader');
+
+      const persisted = await result.persistence;
+      setNotice(persisted ? null : UI_STRINGS.saveFailed);
     } catch {
       setNotice(UI_STRINGS.storyActionFailed);
     } finally {
@@ -665,13 +667,12 @@ export function App(): React.JSX.Element {
   ]);
 
   const moveToPage = useCallback(
-    async (requestedPageIndex: number) => {
+    (requestedPageIndex: number) => {
       const session = sessionRef.current;
       if (
         !session ||
-        !snapshot ||
-        pagedReader.pages.length === 0 ||
-        !beginMutation()
+        mutationLockRef.current ||
+        pagedReader.pages.length === 0
       ) {
         return;
       }
@@ -682,36 +683,30 @@ export function App(): React.JSX.Element {
       );
       const previousPageIndex = pagedReader.currentPageIndex;
       if (nextPageIndex === previousPageIndex) {
-        endMutation();
         return;
       }
 
       const nextPage = pagedReader.pages[nextPageIndex];
-      setPagedInteractionVisible(false);
-      setPagedInteractionSnapshot(null);
-      setPagedInteractionTargetPassageCount(null);
-      setPagedReader(current => movePagedReaderToPage(current, nextPageIndex));
 
       try {
-        const result = await session.setPage(nextPageIndex, nextPage.anchor);
-        setSnapshot(result.snapshot);
-        setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
-      } catch {
+        const pageUpdate = session.setPage(nextPageIndex, nextPage.anchor);
+        setPagedInteractionVisible(false);
+        setPagedInteractionSnapshot(null);
+        setPagedInteractionTargetPassageCount(null);
         setPagedReader(current =>
-          movePagedReaderToPage(current, previousPageIndex),
+          movePagedReaderToPage(current, nextPageIndex),
         );
+
+        void pageUpdate.persistence.then(persisted => {
+          if (!persisted && sessionRef.current === session) {
+            setNotice(UI_STRINGS.saveFailed);
+          }
+        });
+      } catch {
         setNotice(UI_STRINGS.storyActionFailed);
-      } finally {
-        endMutation();
       }
     },
-    [
-      beginMutation,
-      endMutation,
-      pagedReader.currentPageIndex,
-      pagedReader.pages,
-      snapshot,
-    ],
+    [pagedReader.currentPageIndex, pagedReader.pages],
   );
 
   const openPagedInteraction = useCallback((): void => {
