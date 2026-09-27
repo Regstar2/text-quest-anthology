@@ -1,5 +1,10 @@
-import React, {useEffect} from 'react';
-import {NativeModules, Platform, View, useWindowDimensions} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {
+  DeviceEventEmitter,
+  NativeModules,
+  Platform,
+  View,
+} from 'react-native';
 import {
   InterstitialAdLoader,
   MobileAds,
@@ -14,12 +19,19 @@ import type {
 import {InterstitialFrequencyPolicy} from '../InterstitialFrequencyPolicy';
 import {ADS_CONFIG} from '../../config/adsConfig';
 
+const NATIVE_BANNER_EVENT = 'NativeBannerStateChanged';
+
+type NativeBannerState = 'loading' | 'loaded' | 'failed' | 'shown' | 'hidden';
+
+type NativeBannerEvent = Readonly<{
+  state: NativeBannerState;
+  heightDp: number;
+}>;
+
 type NativeBannerControllerModule = Readonly<{
-  setVisible: (
-    visible: boolean,
-    adUnitId: string,
-    maxHeightDp: number,
-  ) => void;
+  prepare: (adUnitId: string) => void;
+  setVisible: (visible: boolean) => void;
+  getState: () => Promise<NativeBannerEvent>;
 }>;
 
 function logAdsError(message: string, error: unknown): void {
@@ -38,37 +50,58 @@ function getNativeBannerController(): NativeBannerControllerModule | null {
   );
 }
 
-function YandexBanner({visible}: AdsBannerProps): React.JSX.Element {
-  const {height} = useWindowDimensions();
-  const reservedHeight = Math.min(
-    ADS_CONFIG.bannerLayout.maxHeight,
-    Math.max(
-      ADS_CONFIG.bannerLayout.minHeight,
-      Math.ceil(height * ADS_CONFIG.bannerLayout.heightRatio),
-    ),
-  );
+function YandexBanner({
+  onReadyHeightChange,
+  visible,
+}: AdsBannerProps): React.JSX.Element {
   const nativeBannerController = getNativeBannerController();
-  const canShowNativeBanner = nativeBannerController !== null;
+  const [readyHeight, setReadyHeight] = useState(0);
+  useEffect(() => {
+    if (!nativeBannerController) {
+      onReadyHeightChange?.(0);
+      return;
+    }
+
+    const handleEvent = (event: NativeBannerEvent) => {
+      if (event.state === 'failed') {
+        setReadyHeight(0);
+        onReadyHeightChange?.(0);
+        return;
+      }
+
+      if (
+        event.state === 'loaded' ||
+        event.state === 'shown' ||
+        (event.state === 'hidden' && event.heightDp > 0)
+      ) {
+        const nextHeight = Math.max(0, Math.round(event.heightDp));
+        setReadyHeight(nextHeight);
+        onReadyHeightChange?.(nextHeight);
+      }
+    };
+
+    const subscription = DeviceEventEmitter.addListener(
+      NATIVE_BANNER_EVENT,
+      handleEvent,
+    );
+    nativeBannerController.getState().then(handleEvent).catch((error: unknown) => {
+      logAdsError('Banner state sync failed.', error);
+    });
+
+    return () => subscription.remove();
+  }, [nativeBannerController, onReadyHeightChange]);
 
   useEffect(() => {
     if (!nativeBannerController) {
       return;
     }
 
-    nativeBannerController.setVisible(
-      visible,
-      ADS_CONFIG.adUnits.banner,
-      reservedHeight,
-    );
+    nativeBannerController.setVisible(visible && readyHeight > 0);
 
     return () => {
-      nativeBannerController.setVisible(
-        false,
-        ADS_CONFIG.adUnits.banner,
-        reservedHeight,
-      );
+      nativeBannerController.setVisible(false);
     };
-  }, [nativeBannerController, reservedHeight, visible]);
+  }, [nativeBannerController, readyHeight, visible]);
 
   return (
     <View
@@ -77,7 +110,7 @@ function YandexBanner({visible}: AdsBannerProps): React.JSX.Element {
       pointerEvents="none"
       style={{
         flexShrink: 0,
-        height: canShowNativeBanner && visible ? reservedHeight : 0,
+        height: visible && readyHeight > 0 ? readyHeight : 0,
         width: '100%',
       }}
     />
@@ -104,6 +137,7 @@ export class YandexAdsProvider implements AdsProvider {
     const initialization = MobileAds.initialize()
       .then(() => {
         this.isInitialized = true;
+        getNativeBannerController()?.prepare(ADS_CONFIG.adUnits.banner);
         return this.preloadInterstitial();
       })
       .catch((error: unknown) => {

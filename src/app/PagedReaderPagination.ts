@@ -23,6 +23,7 @@ export type ReaderPhysicalPage = Readonly<{
   pageIndex: number;
   paragraphs: readonly string[];
   anchor: ReaderSemanticAnchor;
+  bannerReserve: number;
 }>;
 
 export type PagedReaderState = Readonly<{
@@ -449,6 +450,11 @@ function paginateMeasuredLines(
         chunk,
         pageIndexOffset + index,
         geometryRevision,
+        getPageBannerReserve(
+          pageIndexOffset + index,
+          bannerReserve,
+          pagesPerBanner,
+        ),
       ),
     ),
   );
@@ -567,10 +573,11 @@ function createPhysicalPage(
   lines: readonly AnchoredMeasuredLine[],
   pageIndex: number,
   geometryRevision: number,
+  bannerReserve: number,
 ): ReaderPhysicalPage {
   const anchor = lines[0]?.anchor ?? {passageIndex: 0, characterOffset: 0};
   const paragraphs = Object.freeze(pageLinesToParagraphs(lines.map(line => line.text)));
-  const key = `${geometryRevision}:${pageIndex}:${anchor.passageIndex}:${anchor.characterOffset}:${hashText(
+  const key = `${geometryRevision}:${pageIndex}:${bannerReserve}:${anchor.passageIndex}:${anchor.characterOffset}:${hashText(
     paragraphs.join('\n'),
   )}`;
 
@@ -580,6 +587,7 @@ function createPhysicalPage(
     pageIndex,
     paragraphs,
     anchor: Object.freeze({...anchor}),
+    bannerReserve,
   });
 }
 

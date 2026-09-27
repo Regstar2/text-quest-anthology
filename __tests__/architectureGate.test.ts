@@ -95,6 +95,6 @@ describe('v0.1.8 architecture gate', () => {
     expect(reactAdsProvider).not.toMatch(/BannerView|BannerAdSize/);
     expect(reactAdsProvider).toContain('NativeBannerController');
     expect(androidActivity).toContain('BannerAdView');
-    expect(androidActivity).toContain('BannerAdSize.inline');
+    expect(androidActivity).toContain('BannerAdSize.sticky');
   });
 });

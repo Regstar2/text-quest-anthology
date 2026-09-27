@@ -101,7 +101,7 @@ type AppColors = Readonly<{
 
 export function App(): React.JSX.Element {
   const systemDark = useColorScheme() === 'dark';
-  const {height: windowHeight, fontScale} = useWindowDimensions();
+  const {fontScale} = useWindowDimensions();
   const sessionRef = useRef<StorySession | null>(null);
   const mutationLockRef = useRef(false);
   const hasStartedSessionRef = useRef(false);
@@ -136,6 +136,7 @@ export function App(): React.JSX.Element {
     setPagedInteractionTargetPassageCount,
   ] = useState<number | null>(null);
   const [feedBannerVisible, setFeedBannerVisible] = useState(false);
+  const [bannerReadyHeight, setBannerReadyHeight] = useState(0);
 
   const readerPalette = resolveReaderPalette(readerPreferences.theme, systemDark);
   const appColors: AppColors = readerPalette;
@@ -565,14 +566,6 @@ export function App(): React.JSX.Element {
     () => buildReaderParagraphs(snapshot),
     [snapshot],
   );
-  const bannerReservedHeight = Math.min(
-    ADS_CONFIG.bannerLayout.maxHeight,
-    Math.max(
-      ADS_CONFIG.bannerLayout.minHeight,
-      Math.ceil(windowHeight * ADS_CONFIG.bannerLayout.heightRatio),
-    ),
-  );
-
   useEffect(() => {
     if (readerMode !== 'pages') {
       return;
@@ -600,14 +593,14 @@ export function App(): React.JSX.Element {
     const nextRequest = planPaginationMeasurement(
       pagedReader,
       readerParagraphs,
-      bannerReservedHeight,
+      bannerReadyHeight,
       ADS_CONFIG.bannerFrequency.pagesPerBanner,
     );
     setPaginationRequest(current =>
       current?.key === nextRequest?.key ? current : nextRequest,
     );
   }, [
-    bannerReservedHeight,
+    bannerReadyHeight,
     pagedReader,
     readerMode,
     readerParagraphs,
@@ -642,15 +635,13 @@ export function App(): React.JSX.Element {
     readerMode === 'pages' &&
     !isPagedInteractionVisible &&
     currentPage !== null &&
-    (pagedReader.currentPageIndex + 1) %
-      ADS_CONFIG.bannerFrequency.pagesPerBanner ===
-      0;
+    currentPage.bannerReserve > 0 &&
+    currentPage.bannerReserve === bannerReadyHeight;
   const showReaderBanner =
     snapshot?.isEnded !== true &&
     (readerMode === 'pages'
       ? pageBannerActive
       : screen === 'reader' && feedBannerVisible);
-  const reservePagedBannerSlot = pageBannerActive;
   const isBusy = isLoading || isMutating;
 
   useEffect(() => {
@@ -1315,18 +1306,12 @@ export function App(): React.JSX.Element {
       <StatusBar barStyle={readerPalette.statusBar} />
       <SafeAreaView
         style={[styles.safeArea, {backgroundColor: appColors.background}]}>
-        <View
-          style={
-            reservePagedBannerSlot
-              ? [styles.pagedBannerSlot, {height: bannerReservedHeight}]
-              : undefined
-          }>
-          <AdsBanner
-            isDarkMode={readerPalette.statusBar === 'light-content'}
-            reserveSpace={false}
-            visible={showReaderBanner}
-          />
-        </View>
+        <AdsBanner
+          isDarkMode={readerPalette.statusBar === 'light-content'}
+          onReadyHeightChange={setBannerReadyHeight}
+          reserveSpace={false}
+          visible={showReaderBanner}
+        />
 
         {screen === 'main' ? (
           <View style={styles.screen}>
@@ -1687,7 +1672,7 @@ export function App(): React.JSX.Element {
                             width,
                             height:
                               height +
-                              (pageBannerActive ? bannerReservedHeight : 0),
+                              (pageBannerActive ? currentPage.bannerReserve : 0),
                             fontScale,
                           }),
                         );
