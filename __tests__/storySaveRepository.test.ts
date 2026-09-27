@@ -89,6 +89,24 @@ describe('StorySaveRepository', () => {
     });
   });
 
+  test('corrupted reader cursor is isolated from the narrative save', async () => {
+    const storage = new MemoryStorySaveStorage();
+    const repository = new StorySaveRepository(storage);
+    const narrative = makeSave('story-a');
+
+    await repository.save('story-a', narrative);
+    storage.seed('text-quest-anthology.reader-cursor.story-a', '{not-json');
+
+    await expect(repository.load('story-a')).resolves.toEqual({
+      status: 'loaded',
+      save: narrative,
+    });
+    await expect(repository.loadReaderCursor('story-a')).resolves.toEqual({
+      status: 'corrupted',
+      reason: 'invalid-json',
+    });
+  });
+
   test('completed placeholder ending may persist an empty current reader text', async () => {
     const storage = new MemoryStorySaveStorage();
     const repository = new StorySaveRepository(storage);
