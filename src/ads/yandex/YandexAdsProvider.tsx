@@ -32,6 +32,7 @@ type NativeBannerEvent = Readonly<{
 type NativeBannerControllerModule = Readonly<{
   prepare: (adUnitId: string) => void;
   setVisible: (visible: boolean) => void;
+  getState: () => Promise<NativeBannerEvent>;
 }>;
 
 function logAdsError(message: string, error: unknown): void {
@@ -62,22 +63,27 @@ function YandexBanner({
       return;
     }
 
+    const handleEvent = (event: NativeBannerEvent) => {
+      if (event.state === 'failed') {
+        setReadyHeight(0);
+        onReadyHeightChange?.(0);
+        return;
+      }
+
+      if (event.state === 'loaded' || event.state === 'shown') {
+        const nextHeight = Math.max(0, Math.round(event.heightDp));
+        setReadyHeight(nextHeight);
+        onReadyHeightChange?.(nextHeight);
+      }
+    };
+
     const subscription: EmitterSubscription = DeviceEventEmitter.addListener(
       NATIVE_BANNER_EVENT,
-      (event: NativeBannerEvent) => {
-        if (event.state === 'failed') {
-          setReadyHeight(0);
-          onReadyHeightChange?.(0);
-          return;
-        }
-
-        if (event.state === 'loaded' || event.state === 'shown') {
-          const nextHeight = Math.max(0, Math.round(event.heightDp));
-          setReadyHeight(nextHeight);
-          onReadyHeightChange?.(nextHeight);
-        }
-      },
+      handleEvent,
     );
+    nativeBannerController.getState().then(handleEvent).catch((error: unknown) => {
+      logAdsError('Banner state sync failed.', error);
+    });
 
     return () => subscription.remove();
   }, [nativeBannerController, onReadyHeightChange]);
