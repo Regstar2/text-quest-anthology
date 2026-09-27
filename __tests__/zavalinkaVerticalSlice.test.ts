@@ -77,7 +77,7 @@ describe('Завалинка v0.2.0 known routes', () => {
       current.snapshot.choices.some(
         choice =>
           choice.enabled &&
-          choice.text.startsWith('Найти и заранее подготовить люк'),
+          choice.text.startsWith('Найти и заранее проверить люк на чердак'),
       ),
     ).toBe(true);
   });
@@ -134,14 +134,14 @@ describe('Завалинка v0.2.0 known routes', () => {
 
     expect(
       current.snapshot.choices.some(choice =>
-        choice.text.startsWith('Найти и заранее подготовить люк'),
+        choice.text.startsWith('Найти и заранее проверить люк на чердак'),
       ),
     ).toBe(false);
     expect(
       current.snapshot.choices.some(
         choice =>
           choice.enabled &&
-          choice.text.startsWith('Осмотреть чердак и подготовить вещи'),
+          choice.text.startsWith('Осмотреть чердак и заранее подготовить там подручные вещи'),
       ),
     ).toBe(true);
   });
