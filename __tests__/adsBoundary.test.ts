@@ -20,12 +20,8 @@ describe('ads boundary', () => {
     });
   });
 
-  it('gives the periodic inline banner enough vertical room without letting it dominate the reader', () => {
-    expect(ADS_CONFIG.bannerLayout).toEqual({
-      heightRatio: 0.14,
-      minHeight: 96,
-      maxHeight: 120,
-    });
+  it('does not guess native banner height in shared config', () => {
+    expect(ADS_CONFIG).not.toHaveProperty('bannerLayout');
   });
 
   it('shows the reader banner only on every third page or feed choice', () => {
