@@ -4,6 +4,7 @@ import android.view.View
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.NativeModule
+import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -14,6 +15,9 @@ import com.facebook.react.uimanager.ViewManager
 class NativeBannerModule(
     private val reactContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(reactContext) {
+    private var lastState: String = "hidden"
+    private var lastHeightDp: Int = 0
+
     override fun getName(): String = "NativeBannerController"
 
     @ReactMethod
@@ -31,14 +35,9 @@ class NativeBannerModule(
     }
 
     private fun emitState(state: String, heightDp: Int) {
-        val payload = Arguments.createMap().apply {
             putString("state", state)
             putInt("heightDp", heightDp)
         }
-        reactContext
-            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit(EVENT_NAME, payload)
-    }
 
     companion object {
         const val EVENT_NAME = "NativeBannerStateChanged"
