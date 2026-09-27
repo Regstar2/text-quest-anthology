@@ -4,7 +4,6 @@ import {
   NativeModules,
   Platform,
   View,
-  type EmitterSubscription,
 } from 'react-native';
 import {
   InterstitialAdLoader,
@@ -77,7 +76,7 @@ function YandexBanner({
       }
     };
 
-    const subscription: EmitterSubscription = DeviceEventEmitter.addListener(
+    const subscription = DeviceEventEmitter.addListener(
       NATIVE_BANNER_EVENT,
       handleEvent,
     );
