@@ -34,7 +34,21 @@ class NativeBannerModule(
         }
     }
 
+    @ReactMethod
+    fun getState(promise: Promise) {
+        promise.resolve(createStatePayload(lastState, lastHeightDp))
+    }
+
     private fun emitState(state: String, heightDp: Int) {
+        lastState = state
+        lastHeightDp = heightDp
+        reactContext
+            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit(EVENT_NAME, createStatePayload(state, heightDp))
+    }
+
+    private fun createStatePayload(state: String, heightDp: Int) =
+        Arguments.createMap().apply {
             putString("state", state)
             putInt("heightDp", heightDp)
         }
