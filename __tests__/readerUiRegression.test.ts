@@ -170,29 +170,49 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(pagination).toContain('compareReaderSemanticAnchors');
   });
 
-  test('banner space exists only on deterministic ad pages without changing canonical geometry', () => {
+  test('banner lifecycle uses native readiness and immutable per-page reserve metadata', () => {
     const app = source('src/app/AppV018Stable.tsx');
     const pagination = source('src/app/PagedReaderPagination.ts');
     const yandexAds = source('src/ads/yandex/YandexAdsProvider.tsx');
+    const nativeBanner = source(
+      'android/app/src/main/java/io/github/regstar2/textquestanthology/MainActivity.kt',
+    );
+    const nativeModule = source(
+      'android/app/src/main/java/io/github/regstar2/textquestanthology/NativeBannerModule.kt',
+    );
 
-    expect(app).toContain('const reservePagedBannerSlot = pageBannerActive;');
-    expect(app).toContain('!isPagedInteractionVisible &&');
-    expect(app).toContain('(pageBannerActive ? bannerReservedHeight : 0),');
-    expect(app).toContain('ADS_CONFIG.bannerFrequency.pagesPerBanner,');
+    expect(app).toContain('const [bannerReadyHeight, setBannerReadyHeight] = useState(0);');
+    expect(app).toContain('onReadyHeightChange={setBannerReadyHeight}');
+    expect(app).toContain('currentPage.bannerReserve > 0');
+    expect(app).toContain('currentPage.bannerReserve === bannerReadyHeight');
     expect(app).toContain(
-      '(pagedReader.currentPageIndex + 1) %',
+      '(pageBannerActive ? currentPage.bannerReserve : 0)',
     );
-    expect(app).not.toContain(
-      "const reservePagedBannerSlot = screen === 'reader' && readerMode === 'pages';",
-    );
+    expect(app).not.toContain('bannerReservedHeight');
+    expect(app).not.toContain('reservePagedBannerSlot');
+
     expect(pagination).toContain('bannerReserve: number;');
-    expect(pagination).toContain('pagesPerBanner: number;');
     expect(pagination).toContain('function getPageBannerReserve(');
+    expect(pagination).toContain('bannerReserve,\n  });');
+
+    expect(yandexAds).toContain('new NativeEventEmitter(');
+    expect(yandexAds).toContain("event.state === 'loaded' || event.state === 'shown'");
+    expect(yandexAds).toContain("event.state === 'failed'");
+    expect(yandexAds).toContain('visible && readyHeight > 0 ? readyHeight : 0');
     expect(yandexAds).toContain(
-      'height: canShowNativeBanner && visible ? reservedHeight : 0,',
+      'getNativeBannerController()?.prepare(ADS_CONFIG.adUnits.banner);',
     );
-    expect(app).not.toContain('setPageBannerVisible');
-    expect(app).not.toContain('pageLayoutPending');
+    expect(yandexAds).not.toContain('useWindowDimensions');
+    expect(yandexAds).not.toContain('reservedHeight');
+
+    expect(nativeBanner).toContain('BannerAdSize.sticky(this, adWidthDp)');
+    expect(nativeBanner).toContain('setBannerAdEventListener(');
+    expect(nativeBanner).toContain('emitBannerState("loaded")');
+    expect(nativeBanner).toContain('emitBannerState("failed", 0)');
+    expect(nativeBanner).toContain('emitBannerState("shown")');
+    expect(nativeBanner).toContain('"hidden"');
+    expect(nativeBanner).not.toContain('BannerAdSize.inline(');
+    expect(nativeModule).toContain('const val EVENT_NAME = "NativeBannerStateChanged"');
   });
 
   test('reader notice is an overlay and cannot participate in page layout', () => {
