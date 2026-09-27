@@ -69,7 +69,11 @@ function YandexBanner({
         return;
       }
 
-      if (event.state === 'loaded' || event.state === 'shown') {
+      if (
+        event.state === 'loaded' ||
+        event.state === 'shown' ||
+        (event.state === 'hidden' && event.heightDp > 0)
+      ) {
         const nextHeight = Math.max(0, Math.round(event.heightDp));
         setReadyHeight(nextHeight);
         onReadyHeightChange?.(nextHeight);
