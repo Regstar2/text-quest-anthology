@@ -66,8 +66,17 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
       "readerMode === 'pages' ? pagedReader.currentPageIndex + 1 : undefined;",
     );
     expect(app).toContain(
+      'const result = session.choose(choiceIndex, nextReaderPageIndex);',
+    );
+    expect(app).not.toContain(
       'const result = await session.choose(choiceIndex, nextReaderPageIndex);',
     );
+    const snapshotCommit = app.indexOf('setSnapshot(result.snapshot);');
+    const persistenceAwait = app.indexOf(
+      'const persisted = await result.persistence;',
+    );
+    expect(snapshotCommit).toBeGreaterThan(-1);
+    expect(persistenceAwait).toBeGreaterThan(snapshotCommit);
     expect(app).toContain('void recordEnding(activeStory.id, result.snapshot);');
     expect(app).not.toContain('stablePageFrameRef');
     expect(app).not.toContain('lastPageNumberRef');
@@ -129,12 +138,17 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     const app = source('src/app/AppV018Stable.tsx');
     const pagination = source('src/app/PagedReaderPagination.ts');
 
-    expect(app).toContain(
-      'setPagedReader(current => movePagedReaderToPage(current, nextPageIndex));',
+    expect(app).toContain('const pageUpdate = session.setPage(');
+    expect(app).toContain('nextPageIndex, nextPage.anchor');
+    expect(app).toContain('void pageUpdate.persistence.then(persisted => {');
+    expect(app).not.toContain(
+      'await session.setPage(nextPageIndex, nextPage.anchor)',
     );
-    expect(app).toContain(
-      'const result = await session.setPage(nextPageIndex, nextPage.anchor);',
-    );
+    const moveStart = app.indexOf('const moveToPage = useCallback(');
+    const moveEnd = app.indexOf('const openPagedInteraction', moveStart);
+    const moveSource = app.slice(moveStart, moveEnd);
+    expect(moveSource).not.toContain('beginMutation()');
+    expect(moveSource).not.toContain('setSnapshot(');
     expect(pagination).toContain(': {...state, currentPageIndex};');
     expect(app).not.toContain('setPaginationRequest(' + 'planPaginationMeasurement');
   });
@@ -218,6 +232,19 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(nativeModule).toContain('const val EVENT_NAME = "NativeBannerStateChanged"');
   });
 
+  test('reader cursor uses non-blocking native writes while narrative saves stay durable', () => {
+    const storage = source(
+      'android/app/src/main/java/io/github/regstar2/textquestanthology/StorySaveStorageModule.kt',
+    );
+
+    expect(storage).toMatch(
+      /fun setItem\([\s\S]*?putString\(key, value\)\.commit\(\)/,
+    );
+    expect(storage).toMatch(
+      /fun setItemDeferred\([\s\S]*?putString\(key, value\)\.apply\(\)/,
+    );
+  });
+
   test('reader notice is an overlay and cannot participate in page layout', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
@@ -270,6 +297,8 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(session).toContain('pageAnchor: ReaderSemanticAnchor | null;');
     expect(session).toContain('readerPageAnchor: this.readerPageAnchor,');
     expect(repository).toContain('readerPageAnchor?: ReaderSemanticAnchor | null;');
+    expect(repository).toContain('export type ReaderCursor = Readonly<{');
+    expect(repository).toContain('pageAnchor: ReaderSemanticAnchor | null;');
     expect(repository).toContain('isOptionalReaderPageAnchor(value.readerPageAnchor)');
   });
 
