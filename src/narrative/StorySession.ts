@@ -1,4 +1,8 @@
 import {InkStoryRuntime, type InkRuntimeSnapshot} from './InkStoryRuntime';
+import {
+  isReaderSemanticAnchor,
+  type ReaderSemanticAnchor,
+} from './ReaderPosition';
 import type {StoryManifestEntry} from './StoryMetadata';
 import {
   StorySaveRepository,
@@ -17,6 +21,7 @@ export type StoryReaderSnapshot = InkRuntimeSnapshot &
   Readonly<{
     passages: readonly string[];
     pageIndex: number;
+    pageAnchor: ReaderSemanticAnchor | null;
   }>;
 
 export type StorySessionOpenResult = Readonly<{
@@ -41,6 +46,7 @@ export class StorySession {
   private currentReaderText: string;
   private readerPassages: string[];
   private readerPageIndex: number;
+  private readerPageAnchor: ReaderSemanticAnchor | null;
   private startedAt: string;
 
   private constructor(
@@ -52,6 +58,7 @@ export class StorySession {
     currentReaderText: string,
     readerPassages: readonly string[],
     readerPageIndex: number,
+    readerPageAnchor: ReaderSemanticAnchor | null,
     startedAt: string,
   ) {
     this.runtime = runtime;
@@ -59,6 +66,7 @@ export class StorySession {
     this.currentReaderText = currentReaderText;
     this.readerPassages = [...readerPassages];
     this.readerPageIndex = Math.max(0, readerPageIndex);
+    this.readerPageAnchor = readerPageAnchor;
     this.startedAt = startedAt;
   }
 
@@ -134,6 +142,7 @@ export class StorySession {
         currentReaderText,
         readerPassages,
         loadResult.save.readerPageIndex ?? 0,
+        loadResult.save.readerPageAnchor ?? null,
         loadResult.save.startedAt,
       );
 
@@ -154,12 +163,19 @@ export class StorySession {
     }
   }
 
-  async setPage(pageIndex: number): Promise<StorySessionMutationResult> {
+  async setPage(
+    pageIndex: number,
+    pageAnchor: ReaderSemanticAnchor | null = null,
+  ): Promise<StorySessionMutationResult> {
     if (!Number.isInteger(pageIndex) || pageIndex < 0) {
       throw new Error('READER_PAGE_INVALID: Page index must be non-negative.');
     }
+    if (pageAnchor !== null && !isReaderSemanticAnchor(pageAnchor)) {
+      throw new Error('READER_ANCHOR_INVALID: Reader anchor is invalid.');
+    }
 
     this.readerPageIndex = pageIndex;
+    this.readerPageAnchor = pageAnchor;
     return {
       snapshot: this.readerSnapshot(),
       persisted: await this.persistCurrentState(),
@@ -187,10 +203,14 @@ export class StorySession {
         `${READER_PAGE_BREAK_MARKER}:${previousChoiceCount}`,
       );
     }
+    const firstNewPassageIndex = this.readerPassages.length;
     this.readerPassages.push(...nextPassages);
     this.readerPageIndex =
       readerPageIndex ??
       (this.currentSnapshot.isEnded ? LATEST_READER_PAGE_INDEX : 0);
+    this.readerPageAnchor =
+      firstNarrativeAnchor(this.readerPassages, firstNewPassageIndex) ??
+      this.readerPageAnchor;
 
     return {
       snapshot: this.readerSnapshot(),
@@ -213,6 +233,7 @@ export class StorySession {
     this.currentReaderText = fresh.snapshot.text;
     this.readerPassages = passagesFromText(this.currentReaderText);
     this.readerPageIndex = 0;
+    this.readerPageAnchor = firstNarrativeAnchor(this.readerPassages, 0);
     this.startedAt = this.clock().toISOString();
 
     if (!(await this.persistCurrentState())) {
@@ -243,6 +264,7 @@ export class StorySession {
       fresh.snapshot.text,
       readerPassages,
       0,
+      firstNarrativeAnchor(readerPassages, 0),
       clock().toISOString(),
     );
 
@@ -260,6 +282,7 @@ export class StorySession {
       text: this.currentReaderText,
       passages: [...this.readerPassages],
       pageIndex: this.readerPageIndex,
+      pageAnchor: this.readerPageAnchor,
     };
   }
 
@@ -275,6 +298,7 @@ export class StorySession {
       readerCurrentText: this.currentReaderText,
       readerPassages: [...this.readerPassages],
       readerPageIndex: this.readerPageIndex,
+      readerPageAnchor: this.readerPageAnchor,
     };
 
     try {
@@ -299,6 +323,18 @@ function passagesFromText(text: string): string[] {
     .split(/\n\s*\n/g)
     .map(passage => passage.trim())
     .filter(passage => passage.length > 0);
+}
+
+function firstNarrativeAnchor(
+  passages: readonly string[],
+  startIndex: number,
+): ReaderSemanticAnchor | null {
+  for (let index = Math.max(0, startIndex); index < passages.length; index += 1) {
+    if (!passages[index].startsWith(READER_PAGE_BREAK_MARKER)) {
+      return {passageIndex: index, characterOffset: 0};
+    }
+  }
+  return null;
 }
 
 function matchesSavedCompletion(

@@ -16,146 +16,197 @@ function source(path: string): string {
     .replace(/\r\n/g, '\n');
 }
 
-describe('v0.1.8 reader UI regressions', () => {
-  test('interaction dock is only mounted on the active choice or ending page', () => {
+describe('v0.3.0 deterministic paged reader regressions', () => {
+  test('choice and ending UI use a separate unnumbered interaction screen', () => {
     const app = source('src/app/AppV018Stable.tsx');
+    const pagination = source('src/app/PagedReaderPagination.ts');
 
-    expect(app).toContain('{isInteractionPage ? (');
-    expect(app).not.toContain('interactionDockHidden');
-    expect(app).toContain('isEndingPage ? renderEndingActions() : renderChoices(true)');
+    expect(app).toContain(
+      'const [pagedInteractionVisible, setPagedInteractionVisible] = useState(false);',
+    );
+    expect(app).toContain('pagedInteractionSnapshot');
+    expect(app).toContain('pagedInteractionTargetPassageCount');
+    expect(app).toContain('const canOpenPagedInteraction =');
+    expect(app).toContain('const isPagedInteractionVisible =');
+    expect(app).toContain('{isPagedInteractionVisible ? (');
+    expect(app).toContain('styles.pagedInteractionContent');
+    expect(app).toContain('(pagedInteractionSnapshot ?? snapshot).isEnded');
+    expect(app).toContain('pagedInteractionSnapshot ?? snapshot');
+    expect(app).toContain('setPagedInteractionVisible(true);');
+    expect(app).toContain('setPagedInteractionVisible(false);');
+    expect(app).not.toContain('interactionDock');
+    expect(pagination).not.toContain('interactionReserve');
+    expect(pagination).not.toContain('getChoiceReserve');
   });
 
-  test('terminal transition advances from the page actually shown to the reader', () => {
+  test('choice screen remains mounted until appended narrative pages are committed', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
     expect(app).toContain(
-      'stablePageFrameRef.current?.pageIndex ?? effectivePageIndex;',
+      'setPagedInteractionTargetPassageCount(result.snapshot.passages.length);',
     );
     expect(app).toContain(
-      "readerMode === 'pages' ? currentReaderPageIndex + 1 : undefined;",
+      'pagedReader.processedPassageCount < pagedInteractionTargetPassageCount',
+    );
+    expect(app).toContain('paginationRequest !== null');
+    expect(app).toContain('setPagedInteractionSnapshot(snapshot);');
+    expect(app).toContain('!pagedInteractionTransitionPending');
+    expect(app).toContain(
+      'disabled={isBusy || pagedInteractionTransitionPending}',
+    );
+    expect(app).not.toContain(
+      'setPagedInteractionVisible(false);\n      setSnapshot(result.snapshot);',
+    );
+  });
+
+  test('choice transition advances from the single canonical page index', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).toContain(
+      "readerMode === 'pages' ? pagedReader.currentPageIndex + 1 : undefined;",
     );
     expect(app).toContain(
       'const result = await session.choose(choiceIndex, nextReaderPageIndex);',
     );
     expect(app).toContain('void recordEnding(activeStory.id, result.snapshot);');
-    expect(app).not.toContain(
-      'await recordEnding(activeStory.id, result.snapshot);',
-    );
+    expect(app).not.toContain('stablePageFrameRef');
+    expect(app).not.toContain('lastPageNumberRef');
+    expect(app).not.toContain('pageOrdinalRef');
   });
 
-  test('page measurement cannot paint over visible reader text during remeasurement', () => {
+  test('page measurement stays offscreen, survives interaction screens and commits immutable physical pages', () => {
     const app = source('src/app/AppV018Stable.tsx');
+    const pagesRenderStart = app.indexOf("{readerMode === 'pages' ? (");
+    const measurementIndex = app.indexOf(
+      'key={`measurement-${paginationRequest.key}`}',
+      pagesRenderStart,
+    );
+    const interactionIndex = app.indexOf(
+      '{isPagedInteractionVisible ? (',
+      pagesRenderStart,
+    );
 
-    expect(app).not.toContain('fallbackPageParagraphs');
     expect(app).toContain('top: -10000');
     expect(app).toContain("color: 'transparent'");
-    expect(app).toContain('collapsable={false}');
-    expect(app).toContain('key={`measurement-${measurementKey}`}');
-    expect(app).not.toContain('key={measurementKey}');
-    expect(app).not.toContain('key={`reader-page-${measurementKey}`}');
+    expect(measurementIndex).toBeGreaterThan(pagesRenderStart);
+    expect(measurementIndex).toBeLessThan(interactionIndex);
     expect(app).toContain(
-      "key={`page-${displayedPageFrame?.key ?? 'empty'}-${index}`}",
+      'commitPaginationMeasurement(current, request, lines)',
     );
+    expect(app).toContain("key={`page-${currentPage?.key ?? 'empty'}-${index}`}");
+    expect(app).not.toContain('measurementKeyRef');
+    expect(app).not.toContain('readerRevision');
   });
 
-  test('reader holds the last fully resolved frame until measurement and layout are ready', () => {
+  test('reader state has one canonical cursor and no render-time frame mutation', () => {
     const app = source('src/app/AppV018Stable.tsx');
+    const pagination = source('src/app/PagedReaderPagination.ts');
 
     expect(app).toContain(
-      'const stablePageFrameRef = useRef<ReaderPageFrame | null>(null);',
+      'const [pagedReader, setPagedReader] = useState(createPagedReaderState);',
     );
-    expect(app).toContain(
-      'const [pageLayoutPending, setPageLayoutPending] = useState(false);',
-    );
-    expect(app).toContain(
-      'const pageFrameReady = measurementReady && !pageLayoutPending;',
-    );
-    expect(app).toContain('if (pageFrameReady) {');
-    expect(app).toContain('stablePageFrameRef.current = {');
-    expect(app).toContain('const displayedPageFrame = stablePageFrameRef.current;');
-    expect(app).toContain(
-      'const visiblePageParagraphs = displayedPageFrame?.paragraphs ?? [];',
-    );
-    expect(app).toContain('const pageTransitionReady =');
-    expect(app).toContain('if (pageLayoutPending) {');
-    expect(app).toContain('setPageLayoutPending(false);');
-  });
-
-  test('reader cursor drives text, arrows and counter from one page index', () => {
-    const app = source('src/app/AppV018Stable.tsx');
-
-    expect(app).toContain(
-      'const [readerPageIndex, setReaderPageIndex] = useState(0);',
-    );
-    expect(app).toContain('clampPageIndex(readerPageIndex, pages.length)');
-    expect(app).toContain('const previousPageIndex = effectivePageIndex;');
-    expect(app).toContain('setReaderPageIndex(nextPageIndex);');
-    expect(app).toContain('lastPageNumberRef.current = pageNumber;');
-    expect(app).toContain('key={`page-counter-${displayedPageNumber}`}');
-    expect(app).toContain('{displayedPageNumber}');
-    expect(app).not.toContain('const [pageNumber, setPageNumber] = useState(1);');
+    expect(pagination).toContain('currentPageIndex: number;');
+    expect(pagination).toContain('geometryRevision: number;');
+    expect(pagination).toContain('pages: readonly ReaderPhysicalPage[];');
+    expect(app).not.toContain('setReaderPageIndex');
     expect(app).not.toContain('setPageNumber(');
-    expect(app).not.toContain('`${effectivePageIndex + 1}/${pages.length}`');
-    expect(app).not.toContain("readerPalette.muted}]}>\n                    …");
+    expect(app).not.toContain('.current = {');
   });
 
-  test('reader footer keeps the last resolved number while a new frame is pending', () => {
+  test('physical page number is derived from the canonical index and hidden on interaction screens', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
-    expect(app).toContain('const lastPageNumberRef = useRef(1);');
-    expect(app).toContain('lastPageNumberRef.current = pageNumber;');
-    expect(app).toContain(
-      'displayedPageFrame?.pageNumber ?? lastPageNumberRef.current;',
-    );
+    expect(app).toContain('!isPagedInteractionVisible && pageTransitionReady');
+    expect(app).toContain('pagedReader.currentPageIndex + 1');
+    expect(app).toContain('{displayedPageNumber ?? \'\'}');
+    expect(app).toContain('styles.pageFooterCenterSpacer');
+    expect(app).not.toContain('lastPageNumberRef');
+    expect(app).not.toContain('pageOrdinal');
+    expect(app).not.toContain('const [pageNumber, setPageNumber]');
   });
 
-  test('page pagination fills the reader height actually available on screen', () => {
+  test('next and previous only move the cursor and persist the target semantic anchor', () => {
     const app = source('src/app/AppV018Stable.tsx');
+    const pagination = source('src/app/PagedReaderPagination.ts');
 
-    expect(app).toContain('const paginationHeight = pageHeight;');
-    expect(app).not.toContain('useWindowDimensions');
-    expect(app).not.toContain('bannerReservedHeight');
-    expect(app).not.toContain('PAGINATION_SAFETY_LINES');
-    expect(app).toContain('const normalCapacity = measuredNormalCapacity;');
     expect(app).toContain(
-      'const interactionCapacity = measuredInteractionCapacity;',
+      'setPagedReader(current => movePagedReaderToPage(current, nextPageIndex));',
     );
     expect(app).toContain(
-      'paginateLines(activeLines, paginationHeight, interactionReserve)',
+      'const result = await session.setPage(nextPageIndex, nextPage.anchor);',
     );
-    expect(app).toContain(
-      'key: `${readerRevision}:${effectivePageIndex}:${paginationHeight}`',
-    );
+    expect(pagination).toContain(': {...state, currentPageIndex};');
+    expect(app).not.toContain('setPaginationRequest(' + 'planPaginationMeasurement');
   });
 
-  test('page navigation updates banner visibility before exposing the target page', () => {
+  test('new narrative content is planned as an append while geometry stays unchanged', () => {
+    const pagination = source('src/app/PagedReaderPagination.ts');
+
+    expect(pagination).toContain("kind: 'full' | 'append';");
+    expect(pagination).toContain(
+      'const startPassageIndex = needsFullPagination',
+    );
+    expect(pagination).toContain("const kind = needsFullPagination ? 'full' : 'append';");
+    expect(pagination).toContain(
+      'const pages = Object.freeze([...state.pages, ...measuredPages]);',
+    );
+    expect(pagination).toContain('processedPassageCount: request.sourcePassageCount,');
+    expect(pagination).toContain('const measurementSources = sources.filter(');
+    expect(pagination).toContain('return insertSyntheticPageBreaks(sources, lines);');
+    expect(pagination).toContain('if (measuredPages.length === 0)');
+  });
+
+  test('geometry and font-scale changes trigger full pagination with semantic-anchor restoration', () => {
     const app = source('src/app/AppV018Stable.tsx');
-    const bannerUpdate = app.indexOf('setPageBannerVisible(nextBannerVisible);');
-    const cursorUpdate = app.indexOf('setReaderPageIndex(nextPageIndex);');
-    const persistence = app.indexOf('await session.setPage(nextPageIndex);');
+    const pagination = source('src/app/PagedReaderPagination.ts');
 
-    expect(bannerUpdate).toBeGreaterThan(-1);
-    expect(cursorUpdate).toBeGreaterThan(bannerUpdate);
-    expect(persistence).toBeGreaterThan(cursorUpdate);
-    expect(app).toContain('setPageLayoutPending(true);');
-    expect(app).toContain('setPageBannerVisible(previousBannerVisible);');
+    expect(app).toContain('updatePagedReaderGeometry(current, {');
+    expect(app).toContain('width: current.geometry.width,');
+    expect(app).toContain('height: current.geometry.height,');
+    expect(app).toContain('}, [fontScale, readerMode]);');
+    expect(pagination).toContain('geometryRevision: state.geometryRevision + 1,');
+    expect(pagination).toContain('restoreAnchor: currentPage?.anchor ?? state.restoreAnchor,');
+    expect(pagination).toContain('function restorePageIndex(');
+    expect(pagination).toContain('compareReaderSemanticAnchors');
   });
 
-  test('hidden native banner collapses its React spacer completely', () => {
+  test('banner space exists only on deterministic ad pages without changing canonical geometry', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+    const pagination = source('src/app/PagedReaderPagination.ts');
     const yandexAds = source('src/ads/yandex/YandexAdsProvider.tsx');
 
-    expect(yandexAds).toContain(
-      'function YandexBanner({visible}: AdsBannerProps): React.JSX.Element',
+    expect(app).toContain('const reservePagedBannerSlot = pageBannerActive;');
+    expect(app).toContain('!isPagedInteractionVisible &&');
+    expect(app).toContain('(pageBannerActive ? bannerReservedHeight : 0),');
+    expect(app).toContain('ADS_CONFIG.bannerFrequency.pagesPerBanner,');
+    expect(app).toContain(
+      '(pagedReader.currentPageIndex + 1) %',
     );
+    expect(app).not.toContain(
+      "const reservePagedBannerSlot = screen === 'reader' && readerMode === 'pages';",
+    );
+    expect(pagination).toContain('bannerReserve: number;');
+    expect(pagination).toContain('pagesPerBanner: number;');
+    expect(pagination).toContain('function getPageBannerReserve(');
     expect(yandexAds).toContain(
       'height: canShowNativeBanner && visible ? reservedHeight : 0,',
     );
-    expect(yandexAds).not.toContain('visible || reserveSpace');
+    expect(app).not.toContain('setPageBannerVisible');
+    expect(app).not.toContain('pageLayoutPending');
   });
 
-  test('choices persist page boundaries with their original choice reserve', () => {
+  test('reader notice is an overlay and cannot participate in page layout', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).toMatch(
+      /readerNotice:\s*\{\s*position: 'absolute',[\s\S]*?zIndex: 20,/,
+    );
+  });
+
+  test('choices persist page boundaries without exposing control markers to native layout', () => {
     const app = source('src/app/AppV018Stable.tsx');
     const session = source('src/narrative/StorySession.ts');
+    const pagination = source('src/app/PagedReaderPagination.ts');
 
     expect(session).toContain("export const READER_PAGE_BREAK_MARKER = '\\uE001';");
     expect(session).toContain(
@@ -164,21 +215,48 @@ describe('v0.1.8 reader UI regressions', () => {
     expect(session).toContain(
       '`${READER_PAGE_BREAK_MARKER}:${previousChoiceCount}`',
     );
-    expect(app).toContain('let segmentStart = 0;');
-    expect(app).toContain('measuredLines[index].includes(FORCED_PAGE_BREAK_MARKER)');
-    expect(app).toContain('getPageBreakReserve(measuredLines[index])');
+    expect(pagination).toContain('const measurementSources = sources.filter(');
+    expect(pagination).toContain(
+      'source => !source.text.startsWith(FORCED_PAGE_BREAK_MARKER)',
+    );
+    expect(pagination).toContain('return insertSyntheticPageBreaks(sources, lines);');
+    expect(pagination).not.toContain('getPageBreakReserve');
+    expect(pagination).not.toContain('interactionReserve');
     expect(app).toContain(
       '!passage.startsWith(FORCED_PAGE_BREAK_MARKER)',
     );
   });
 
-  test('pages mode paginates the accumulated transcript and feed-to-pages opens its end', () => {
+  test('forward navigation opens interaction without consuming a physical page number', () => {
+    const app = source('src/app/AppV018Stable.tsx');
+
+    expect(app).toContain(
+      'if (pagedReader.currentPageIndex < pagedReader.pages.length - 1) {',
+    );
+    expect(app).toContain('void moveToPage(pagedReader.currentPageIndex + 1);');
+    expect(app).toContain('openPagedInteraction();');
+    expect(app).toContain('onPress={advancePagedReader}');
+    expect(app).toContain('onPress={closePagedInteraction}');
+    expect(app).not.toContain('setPagedReader(current => movePagedReaderToPage(current, pagedReader.pages.length))');
+  });
+
+  test('semantic reader anchor is part of snapshot and persistent save data', () => {
+    const session = source('src/narrative/StorySession.ts');
+    const repository = source('src/persistence/StorySaveRepository.ts');
+
+    expect(session).toContain('pageAnchor: ReaderSemanticAnchor | null;');
+    expect(session).toContain('readerPageAnchor: this.readerPageAnchor,');
+    expect(repository).toContain('readerPageAnchor?: ReaderSemanticAnchor | null;');
+    expect(repository).toContain('isOptionalReaderPageAnchor(value.readerPageAnchor)');
+  });
+
+  test('pages mode still uses accumulated transcript and feed-to-pages opens its end', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
     expect(app).toContain('const passages = snapshot.passages');
     expect(app).toContain('if (passages.length === 0)');
     expect(app).toContain('return passages;');
-    expect(app).toContain('setReaderPageIndex(Number.MAX_SAFE_INTEGER);');
+    expect(app).toContain('resetPagedReader(null, Number.MAX_SAFE_INTEGER);');
     expect(app).not.toContain(
       'setSnapshot({...snapshot, pageIndex: Number.MAX_SAFE_INTEGER});',
     );
