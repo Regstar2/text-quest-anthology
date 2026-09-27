@@ -24,6 +24,7 @@ class MainActivity : ReactActivity() {
     private var bannerAdUnitId: String? = null
     private var bannerHeightDp: Int = 0
     private var bannerLoaded = false
+    private var bannerFailed = false
     private var bannerRequestedVisible = false
     private var bannerEventSink: ((String, Int) -> Unit)? = null
 
@@ -85,7 +86,14 @@ class MainActivity : ReactActivity() {
                 emitBannerState("shown")
             } else {
                 bannerContainer?.visibility = View.INVISIBLE
-                emitBannerState(if (visible) "loading" else "hidden")
+                when {
+                    !visible -> emitBannerState(
+                        "hidden",
+                        if (bannerLoaded) bannerHeightDp else 0,
+                    )
+                    bannerFailed -> emitBannerState("failed", 0)
+                    else -> emitBannerState("loading", 0)
+                }
             }
         }
     }
@@ -94,7 +102,11 @@ class MainActivity : ReactActivity() {
         val root = findViewById<FrameLayout>(android.R.id.content) ?: return
 
         if (bannerAdView != null && bannerAdUnitId == adUnitId) {
-            emitBannerState(if (bannerLoaded) "loaded" else "loading")
+            when {
+                bannerLoaded -> emitBannerState("loaded")
+                bannerFailed -> emitBannerState("failed", 0)
+                else -> emitBannerState("loading", 0)
+            }
             return
         }
 
@@ -102,6 +114,7 @@ class MainActivity : ReactActivity() {
         bannerAdView = null
         bannerContainer?.let(root::removeView)
         bannerLoaded = false
+        bannerFailed = false
         bannerHeightDp = 0
 
         val container = FrameLayout(this).apply {
@@ -142,6 +155,7 @@ class MainActivity : ReactActivity() {
                         }
 
                         bannerLoaded = true
+                        bannerFailed = false
                         if (bannerRequestedVisible) {
                             container.visibility = View.VISIBLE
                         }
@@ -153,6 +167,7 @@ class MainActivity : ReactActivity() {
 
                     override fun onAdFailedToLoad(adRequestError: AdRequestError) {
                         bannerLoaded = false
+                        bannerFailed = true
                         container.visibility = View.INVISIBLE
                         emitBannerState("failed", 0)
                     }
