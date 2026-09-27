@@ -197,7 +197,9 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
 
     expect(yandexAds).toContain('DeviceEventEmitter.addListener(');
     expect(yandexAds).toContain('nativeBannerController.getState().then(handleEvent)');
-    expect(yandexAds).toContain("event.state === 'loaded' || event.state === 'shown'");
+    expect(yandexAds).toContain("event.state === 'loaded'");
+    expect(yandexAds).toContain("event.state === 'shown'");
+    expect(yandexAds).toContain("event.state === 'hidden' && event.heightDp > 0");
     expect(yandexAds).toContain("event.state === 'failed'");
     expect(yandexAds).toContain('visible && readyHeight > 0 ? readyHeight : 0');
     expect(yandexAds).toContain(
