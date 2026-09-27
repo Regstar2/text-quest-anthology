@@ -16,7 +16,7 @@ export type StorySessionRecovery =
   | 'incompatible-save-reset'
   | 'storage-unavailable';
 
-export const READER_PAGE_BREAK_MARKER = '\\uE001';
+export const READER_PAGE_BREAK_MARKER = '\uE001';
 
 export type StoryReaderSnapshot = InkRuntimeSnapshot &
   Readonly<{
@@ -577,7 +577,7 @@ function createRuntimeAtStart(storyPackage: StoryManifestEntry): Readonly<{
 
 function passagesFromText(text: string): string[] {
   return text
-    .split(/\\n\\s*\\n/g)
+    .split(/\n\s*\n/g)
     .map(passage => passage.trim())
     .filter(passage => passage.length > 0);
 }
