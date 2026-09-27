@@ -30,12 +30,6 @@ class NativeBannerModule(
         }
     }
 
-    @ReactMethod
-    fun addListener(eventName: String) = Unit
-
-    @ReactMethod
-    fun removeListeners(count: Double) = Unit
-
     private fun emitState(state: String, heightDp: Int) {
         val payload = Arguments.createMap().apply {
             putString("state", state)
