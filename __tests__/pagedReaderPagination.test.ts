@@ -230,7 +230,6 @@ describe('deterministic paged reader model', () => {
     expect(withGeometry.fallbackPageIndex).toBe(Number.MAX_SAFE_INTEGER);
   });
 
-
   test('forward and backward navigation keeps committed page identities and text stable', () => {
     const passages = Array.from(
       {length: 24},
@@ -309,7 +308,6 @@ describe('deterministic paged reader model', () => {
       ),
     ).toBe(true);
   });
-
 
   test('same geometry does not create a new revision', () => {
     const first = updatePagedReaderGeometry(createPagedReaderState(), geometry);
