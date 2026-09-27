@@ -1,6 +1,6 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
-  NativeEventEmitter,
+  DeviceEventEmitter,
   NativeModules,
   Platform,
   View,
@@ -32,8 +32,6 @@ type NativeBannerEvent = Readonly<{
 type NativeBannerControllerModule = Readonly<{
   prepare: (adUnitId: string) => void;
   setVisible: (visible: boolean) => void;
-  addListener: (eventName: string) => void;
-  removeListeners: (count: number) => void;
 }>;
 
 function logAdsError(message: string, error: unknown): void {
@@ -58,26 +56,13 @@ function YandexBanner({
 }: AdsBannerProps): React.JSX.Element {
   const nativeBannerController = getNativeBannerController();
   const [readyHeight, setReadyHeight] = useState(0);
-  const eventEmitter = useMemo(
-    () =>
-      nativeBannerController
-        ? new NativeEventEmitter(
-            nativeBannerController as unknown as {
-              addListener: (eventName: string) => void;
-              removeListeners: (count: number) => void;
-            },
-          )
-        : null,
-    [nativeBannerController],
-  );
-
   useEffect(() => {
-    if (!eventEmitter) {
+    if (!nativeBannerController) {
       onReadyHeightChange?.(0);
       return;
     }
 
-    const subscription: EmitterSubscription = eventEmitter.addListener(
+    const subscription: EmitterSubscription = DeviceEventEmitter.addListener(
       NATIVE_BANNER_EVENT,
       (event: NativeBannerEvent) => {
         if (event.state === 'failed') {
@@ -95,7 +80,7 @@ function YandexBanner({
     );
 
     return () => subscription.remove();
-  }, [eventEmitter, onReadyHeightChange]);
+  }, [nativeBannerController, onReadyHeightChange]);
 
   useEffect(() => {
     if (!nativeBannerController) {
