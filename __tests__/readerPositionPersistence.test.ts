@@ -55,6 +55,34 @@ describe('semantic reader position persistence', () => {
     expect(restored.snapshot.pageAnchor).toEqual(anchor);
   });
 
+  test('stale cursor revision cannot override a newer narrative save', async () => {
+    const repository = new StorySaveRepository(new MemoryStorySaveStorage());
+    const storyPackage = storyLoader.load('zavalinka');
+    const opened = await StorySession.open(storyPackage, repository);
+
+    await opened.session.flush();
+    await repository.saveReaderCursor('zavalinka', {
+      storyId: 'zavalinka',
+      storyContentVersion: storyPackage.metadata.contentVersion,
+      narrativeRevision: 0,
+      pageIndex: 9,
+      pageAnchor: {passageIndex: 0, characterOffset: 9},
+    });
+
+    const firstChoice = opened.snapshot.choices[0];
+    if (!firstChoice) {
+      throw new Error('Expected an initial story choice.');
+    }
+    await opened.session.choose(firstChoice.index);
+
+    const restored = await StorySession.open(storyPackage, repository);
+    expect(restored.resumed).toBe(true);
+    expect(restored.snapshot.pageIndex).toBe(0);
+    await expect(repository.loadReaderCursor('zavalinka')).resolves.toEqual({
+      status: 'not-found',
+    });
+  });
+
   test('legacy save without a semantic anchor remains valid', async () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
     const storyPackage = storyLoader.load('zavalinka');
