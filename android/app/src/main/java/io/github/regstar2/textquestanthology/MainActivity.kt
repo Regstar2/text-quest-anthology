@@ -9,9 +9,12 @@ import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.yandex.mobile.ads.banner.BannerAdEventListener
 import com.yandex.mobile.ads.banner.BannerAdSize
 import com.yandex.mobile.ads.banner.BannerAdView
 import com.yandex.mobile.ads.common.AdRequest
+import com.yandex.mobile.ads.common.AdRequestError
+import com.yandex.mobile.ads.common.ImpressionData
 import java.lang.ref.WeakReference
 import kotlin.math.roundToInt
 
@@ -19,7 +22,10 @@ class MainActivity : ReactActivity() {
     private var bannerContainer: FrameLayout? = null
     private var bannerAdView: BannerAdView? = null
     private var bannerAdUnitId: String? = null
-    private var bannerMaxHeightDp: Int? = null
+    private var bannerHeightDp: Int = 0
+    private var bannerLoaded = false
+    private var bannerRequestedVisible = false
+    private var bannerEventSink: ((String, Int) -> Unit)? = null
 
     override fun getMainComponentName(): String = "TextQuestAnthology"
 
@@ -41,46 +47,62 @@ class MainActivity : ReactActivity() {
             activeActivity = null
         }
 
+        bannerEventSink = null
         bannerAdView?.destroy()
         bannerAdView = null
         bannerContainer = null
         super.onDestroy()
     }
 
-    fun setNativeBannerVisible(
-        visible: Boolean,
+    fun prepareNativeBanner(
         adUnitId: String,
-        maxHeightDp: Int,
+        eventSink: (String, Int) -> Unit,
     ) {
         runOnUiThread {
             if (isDestroyed) {
                 return@runOnUiThread
             }
 
-            if (visible) {
-                ensureBanner(adUnitId, maxHeightDp)
+            bannerEventSink = eventSink
+            ensureBanner(adUnitId)
+        }
+    }
+
+    fun setNativeBannerVisible(
+        visible: Boolean,
+        eventSink: (String, Int) -> Unit,
+    ) {
+        runOnUiThread {
+            if (isDestroyed) {
+                return@runOnUiThread
+            }
+
+            bannerEventSink = eventSink
+            bannerRequestedVisible = visible
+
+            if (visible && bannerLoaded) {
                 bannerContainer?.visibility = View.VISIBLE
+                emitBannerState("shown")
             } else {
                 bannerContainer?.visibility = View.INVISIBLE
+                emitBannerState(if (visible) "loading" else "hidden")
             }
         }
     }
 
-    private fun ensureBanner(adUnitId: String, maxHeightDp: Int) {
+    private fun ensureBanner(adUnitId: String) {
         val root = findViewById<FrameLayout>(android.R.id.content) ?: return
-        val safeMaxHeightDp = maxHeightDp.coerceAtLeast(50)
 
-        if (
-            bannerAdView != null &&
-            bannerAdUnitId == adUnitId &&
-            bannerMaxHeightDp == safeMaxHeightDp
-        ) {
+        if (bannerAdView != null && bannerAdUnitId == adUnitId) {
+            emitBannerState(if (bannerLoaded) "loaded" else "loading")
             return
         }
 
         bannerAdView?.destroy()
         bannerAdView = null
         bannerContainer?.let(root::removeView)
+        bannerLoaded = false
+        bannerHeightDp = 0
 
         val container = FrameLayout(this).apply {
             visibility = View.INVISIBLE
@@ -106,9 +128,40 @@ class MainActivity : ReactActivity() {
         val adWidthDp = (displayMetrics.widthPixels / displayMetrics.density)
             .roundToInt()
             .coerceAtLeast(1)
-        val adSize = BannerAdSize.inline(this, adWidthDp, safeMaxHeightDp)
+        val adSize = BannerAdSize.sticky(this, adWidthDp)
+        bannerHeightDp = adSize.height
+
         val banner = BannerAdView(this).apply {
             setAdSize(adSize)
+            setBannerAdEventListener(
+                object : BannerAdEventListener {
+                    override fun onAdLoaded() {
+                        if (isDestroyed) {
+                            destroy()
+                            return
+                        }
+
+                        bannerLoaded = true
+                        if (bannerRequestedVisible) {
+                            container.visibility = View.VISIBLE
+                        }
+                        emitBannerState("loaded")
+                        if (bannerRequestedVisible) {
+                            emitBannerState("shown")
+                        }
+                    }
+
+                    override fun onAdFailedToLoad(adRequestError: AdRequestError) {
+                        bannerLoaded = false
+                        container.visibility = View.INVISIBLE
+                        emitBannerState("failed", 0)
+                    }
+
+                    override fun onAdClicked() = Unit
+
+                    override fun onImpression(impressionData: ImpressionData?) = Unit
+                },
+            )
             loadAd(AdRequest.Builder(adUnitId).build())
         }
 
@@ -124,7 +177,14 @@ class MainActivity : ReactActivity() {
         bannerContainer = container
         bannerAdView = banner
         bannerAdUnitId = adUnitId
-        bannerMaxHeightDp = safeMaxHeightDp
+        emitBannerState("loading", 0)
+    }
+
+    private fun emitBannerState(
+        state: String,
+        heightDp: Int = bannerHeightDp,
+    ) {
+        bannerEventSink?.invoke(state, heightDp.coerceAtLeast(0))
     }
 
     companion object {
