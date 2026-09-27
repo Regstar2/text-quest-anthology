@@ -230,6 +230,87 @@ describe('deterministic paged reader model', () => {
     expect(withGeometry.fallbackPageIndex).toBe(Number.MAX_SAFE_INTEGER);
   });
 
+
+  test('forward and backward navigation keeps committed page identities and text stable', () => {
+    const passages = Array.from(
+      {length: 24},
+      (_, index) => `Абзац ${index + 1}.`,
+    );
+    const initial = firstCommit(passages);
+
+    expect(initial.pages).toHaveLength(4);
+    const committedPages = initial.pages;
+    const committedText = initial.pages.map(page => [...page.paragraphs]);
+
+    let state = initial;
+    for (const pageIndex of [1, 2, 3, 2, 1]) {
+      state = movePagedReaderToPage(state, pageIndex);
+
+      expect(state.currentPageIndex).toBe(pageIndex);
+      expect(state.pages).toBe(committedPages);
+      expect(state.pages.map(page => [...page.paragraphs])).toEqual(
+        committedText,
+      );
+      expect(planPaginationMeasurement(state, passages, 0)).toBeNull();
+    }
+  });
+
+  test('stale measurement from an older geometry revision is ignored', () => {
+    const passages = Array.from(
+      {length: 12},
+      (_, index) => `Строка ${index + 1}.`,
+    );
+    const initial = firstCommit(passages);
+    const committedPages = initial.pages;
+
+    const firstResize = updatePagedReaderGeometry(initial, {
+      width: 400,
+      height: 180,
+      fontScale: 1,
+    });
+    const staleRequest = planPaginationMeasurement(firstResize, passages, 0);
+    if (!staleRequest) {
+      throw new Error('Expected pagination request after first resize.');
+    }
+
+    const latestResize = updatePagedReaderGeometry(firstResize, {
+      width: 420,
+      height: 180,
+      fontScale: 1,
+    });
+    const ignored = commitPaginationMeasurement(
+      latestResize,
+      staleRequest,
+      staleRequest.text.split('\n'),
+    );
+
+    expect(ignored).toBe(latestResize);
+    expect(ignored.pages).toBe(committedPages);
+    expect(
+      ignored.pages.every(
+        page => page.geometryRevision !== ignored.geometryRevision,
+      ),
+    ).toBe(true);
+
+    const latestRequest = planPaginationMeasurement(ignored, passages, 0);
+    expect(latestRequest?.geometryRevision).toBe(ignored.geometryRevision);
+    if (!latestRequest) {
+      throw new Error('Expected pagination request for latest geometry.');
+    }
+
+    const committed = commitPaginationMeasurement(
+      ignored,
+      latestRequest,
+      latestRequest.text.split('\n'),
+    );
+    expect(
+      committed.pages.every(
+        page => page.geometryRevision === committed.geometryRevision,
+      ),
+    ).toBe(true);
+  });
+
+
   test('same geometry does not create a new revision', () => {
     const first = updatePagedReaderGeometry(createPagedReaderState(), geometry);
     const same = updatePagedReaderGeometry(first, {...geometry});
