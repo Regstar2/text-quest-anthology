@@ -21,8 +21,8 @@ def signingPropertiesFile = rootProject.file("keystore.properties")
 def signingProperties = new Properties()
 
 if (signingPropertiesFile.exists()) {
-    signingPropertiesFile.withInputStream { stream ->
-        signingProperties.load(stream)
+    signingPropertiesFile.withReader("UTF-8") { reader ->
+        signingProperties.load(reader)
     }
 }
 
