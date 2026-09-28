@@ -136,6 +136,64 @@ describe('deterministic paged reader model', () => {
     expect(state.pages[2].paragraphs).toHaveLength(4);
   });
 
+  test('native measured line height takes precedence over the font-scale estimate', () => {
+    const passages = Array.from({length: 12}, (_, index) => `Строка ${index + 1}.`);
+    let state = updatePagedReaderGeometry(createPagedReaderState(), {
+      width: 360,
+      height: 180,
+      fontScale: 1,
+    });
+    const request = planPaginationMeasurement(state, passages, 0);
+    if (!request) {
+      throw new Error('Expected pagination request.');
+    }
+
+    state = commitPaginationMeasurement(
+      state,
+      request,
+      request.text.split('\n'),
+      40,
+    );
+
+    expect(state.pages).toHaveLength(3);
+    expect(state.pages[0].lines).toHaveLength(4);
+    expect(state.pages[1].lines).toHaveLength(4);
+    expect(state.pages[2].lines).toHaveLength(4);
+  });
+
+  test('physical page keeps the exact measured lines instead of reflowing paragraphs', () => {
+    let state = updatePagedReaderGeometry(createPagedReaderState(), {
+      width: 360,
+      height: 180,
+      fontScale: 1,
+    });
+    const passages = [
+      'Первый длинный абзац продолжается на второй строке.',
+      'Следующий абзац.',
+    ];
+    const request = planPaginationMeasurement(state, passages, 0);
+    if (!request) {
+      throw new Error('Expected pagination request.');
+    }
+
+    const rawLines = [
+      '  Первый длинный абзац',
+      'продолжается на второй строке.\n',
+      '  Следующий абзац.\n',
+    ];
+    state = commitPaginationMeasurement(state, request, rawLines, 28);
+
+    expect(state.pages[0].lines).toEqual([
+      '  Первый длинный абзац',
+      'продолжается на второй строке.',
+      '  Следующий абзац.',
+    ]);
+    expect(state.pages[0].paragraphs).toEqual([
+      '  Первый длинный абзац продолжается на второй строке.',
+      '  Следующий абзац.',
+    ]);
+  });
+
   test('late banner readiness affects only newly appended physical pages', () => {
     const firstPassages = Array.from(
       {length: 12},
