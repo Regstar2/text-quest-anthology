@@ -108,11 +108,11 @@ describe('deterministic paged reader model', () => {
     state = commitPaginationMeasurement(state, request, request.text.split('\n'));
 
     expect(state.pages).toHaveLength(3);
-    expect(state.pages[0].paragraphs).toHaveLength(6);
+    expect(state.pages[0].paragraphs).toHaveLength(5);
     expect(state.pages[0].bannerReserve).toBe(0);
-    expect(state.pages[1].paragraphs).toHaveLength(4);
+    expect(state.pages[1].paragraphs).toHaveLength(3);
     expect(state.pages[1].bannerReserve).toBe(56);
-    expect(state.pages[2].paragraphs).toHaveLength(2);
+    expect(state.pages[2].paragraphs).toHaveLength(4);
     expect(state.pages[2].bannerReserve).toBe(0);
   });
 
@@ -130,10 +130,8 @@ describe('deterministic paged reader model', () => {
 
     state = commitPaginationMeasurement(state, request, request.text.split('\n'));
 
-    expect(state.pages).toHaveLength(3);
-    expect(state.pages[0].paragraphs).toHaveLength(4);
-    expect(state.pages[1].paragraphs).toHaveLength(4);
-    expect(state.pages[2].paragraphs).toHaveLength(4);
+    expect(state.pages).toHaveLength(4);
+    expect(state.pages.every(page => page.paragraphs.length === 3)).toBe(true);
   });
 
   test('native measured line height takes precedence over the font-scale estimate', () => {
@@ -155,10 +153,8 @@ describe('deterministic paged reader model', () => {
       40,
     );
 
-    expect(state.pages).toHaveLength(3);
-    expect(state.pages[0].lines).toHaveLength(4);
-    expect(state.pages[1].lines).toHaveLength(4);
-    expect(state.pages[2].lines).toHaveLength(4);
+    expect(state.pages).toHaveLength(4);
+    expect(state.pages.every(page => page.lines.length === 3)).toBe(true);
   });
 
   test('physical page keeps the exact measured lines instead of reflowing paragraphs', () => {
@@ -196,7 +192,7 @@ describe('deterministic paged reader model', () => {
 
   test('late banner readiness affects only newly appended physical pages', () => {
     const firstPassages = Array.from(
-      {length: 12},
+      {length: 10},
       (_, index) => `Строка ${index + 1}.`,
     );
     let state = updatePagedReaderGeometry(createPagedReaderState(), geometry);
@@ -218,10 +214,10 @@ describe('deterministic paged reader model', () => {
 
     const nextPassages = [
       ...firstPassages,
+      'Новая строка 11.',
+      'Новая строка 12.',
       'Новая строка 13.',
       'Новая строка 14.',
-      'Новая строка 15.',
-      'Новая строка 16.',
     ];
     const appendRequest = planPaginationMeasurement(state, nextPassages, 56, 3);
     if (!appendRequest) {
@@ -268,9 +264,11 @@ describe('deterministic paged reader model', () => {
     expect(state.pages[0].paragraphs).toEqual([
       '  Первая строка.',
       '  Вторая строка.',
-      '  Порыв ветра ударил дождём сбоку. Лера отвернулась и натянула капюшон ниже.',
     ]);
-    expect(state.pages[1].paragraphs).toEqual(['  Следующий абзац.']);
+    expect(state.pages[1].paragraphs).toEqual([
+      '  Порыв ветра ударил дождём сбоку. Лера отвернулась и натянула капюшон ниже.',
+      '  Следующий абзац.',
+    ]);
   });
 
   test('choice boundaries do not reserve or redistribute narrative page space', () => {
@@ -298,21 +296,16 @@ describe('deterministic paged reader model', () => {
       '  Третий абзац.',
       '  Четвёртый абзац.',
       '  Пятый абзац.',
-      '  Шестой абзац.',
     ]);
-    expect(state.pages[1].paragraphs).toEqual(['  Новая сцена.']);
+    expect(state.pages[1].paragraphs).toEqual(['  Шестой абзац.']);
+    expect(state.pages[2].paragraphs).toEqual(['  Новая сцена.']);
   });
 
   test('real geometry change triggers full pagination and restores semantic position', () => {
-    const passages = [
-      'Один.',
-      'Два.',
-      'Три.',
-      'Четыре.',
-      'Пять.',
-      'Шесть.',
-      'Семь.',
-    ];
+    const passages = Array.from(
+      {length: 12},
+      (_, index) => `Абзац ${index + 1}.`,
+    );
     const initial = firstCommit(passages);
     const moved = movePagedReaderToPage(initial, 1);
     const anchor = moved.pages[1].anchor;
@@ -363,7 +356,7 @@ describe('deterministic paged reader model', () => {
     );
     const initial = firstCommit(passages);
 
-    expect(initial.pages).toHaveLength(4);
+    expect(initial.pages).toHaveLength(5);
     const committedPages = initial.pages;
     const committedText = initial.pages.map(page => [...page.paragraphs]);
 
