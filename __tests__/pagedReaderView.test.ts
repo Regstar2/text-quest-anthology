@@ -171,7 +171,7 @@ describe('PagedReaderView component contract', () => {
   });
 
   test('forwards native text measurement as data instead of owning pagination', () => {
-    let state = updatePagedReaderGeometry(createPagedReaderState(), {
+    const state = updatePagedReaderGeometry(createPagedReaderState(), {
       width: 360,
       height: 180,
       fontScale: 1,
