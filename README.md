@@ -180,6 +180,7 @@ RuStore и Yandex Mobile Ads не являются частью narrative core. 
 - [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — структура приложения и будущих story packages.
 - [`docs/versions/versions-index.md`](docs/versions/versions-index.md) — назначение версий до первого релиза.
 - [`docs/testing/manual-test-plan.md`](docs/testing/manual-test-plan.md) — минимальный release test plan.
+- [`docs/testing/release-signing.md`](docs/testing/release-signing.md) — production-подпись Android, локальная сборка, проверка сертификата и backup ключа.
 
 ## Дорожная карта
 
