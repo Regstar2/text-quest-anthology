@@ -1624,7 +1624,9 @@ export function App(): React.JSX.Element {
                       commitMeasuredLines(
                         paginationRequest,
                         measuredLines.map(line => line.text),
-                        Math.max(...measuredLines.map(line => line.height)),
+                        measuredLines.length > 0
+                          ? Math.max(...measuredLines.map(line => line.height))
+                          : undefined,
                       );
                     }}
                     pointerEvents="none"
