@@ -73,6 +73,7 @@ import {
   type ReaderPalette,
 } from './ReaderTheme';
 import {
+  applyPagedReaderLayout,
   committedPageBodyHeight,
   derivePagedReaderBehavior,
   resolvePagedReaderForwardAction,
@@ -1629,11 +1630,15 @@ export function App(): React.JSX.Element {
                 onNext={advancePagedReader}
                 onPageLayout={(width, height) => {
                   setPagedReader(current =>
-                    updatePagedReaderGeometry(current, {
-                      width,
-                      height: committedPageBodyHeight(height, pagedBehavior),
-                      fontScale,
-                    }),
+                    applyPagedReaderLayout(
+                      current,
+                      pagedReader.geometryRevision,
+                      {
+                        width,
+                        height: committedPageBodyHeight(height, pagedBehavior),
+                        fontScale,
+                      },
+                    ),
                   );
                 }}
                 onPrevious={() => {
