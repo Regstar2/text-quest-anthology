@@ -49,20 +49,8 @@ export function PagedReaderView({
   onNext,
   onCloseInteraction,
 }: PagedReaderViewProps): React.JSX.Element {
-  const previousDisabled =
-    busy ||
-    !behavior.pageTransitionReady ||
-    behavior.currentPage === null ||
-    behavior.currentPage.pageIndex === 0;
-  const nextDisabled =
-    busy ||
-    !behavior.pageTransitionReady ||
-    (behavior.currentPage !== null &&
-      behavior.currentPage.pageIndex < 0) ||
-    (!behavior.canOpenInteraction &&
-      behavior.currentPage !== null &&
-      behavior.currentPage.pageIndex === behavior.currentPage.pageIndex &&
-      behavior.displayedPageNumber === null);
+  const previousDisabled = busy || !behavior.canGoPrevious;
+  const nextDisabled = busy || !behavior.canGoNext;
 
   return (
     <View style={styles.pageReaderContent}>
