@@ -409,10 +409,7 @@ function paginateMeasuredLines(
 
   const effectiveLineHeight =
     STORY_LINE_HEIGHT *
-    Math.min(
-      Math.max(fontScale, 1),
-      READER_MAX_FONT_SIZE_MULTIPLIER,
-    );
+    Math.min(Math.max(fontScale, 1), READER_MAX_FONT_SIZE_MULTIPLIER);
   const contentHeight = Math.max(
     effectiveLineHeight,
     pageHeight - PAGE_VERTICAL_PADDING,
@@ -450,6 +447,7 @@ function paginateMeasuredLines(
       bannerReserve,
       pagesPerBanner,
       nextPageIndex,
+      effectiveLineHeight,
     );
     chunks.push(...tailPages);
   }
@@ -563,10 +561,7 @@ function getPageLineCapacity(
   );
   return Math.max(
     1,
-    Math.floor(
-      (contentHeight - reservedForBanner) /
-        effectiveLineHeight,
-    ),
+    Math.floor((contentHeight - reservedForBanner) / effectiveLineHeight),
   );
 }
 
