@@ -1,4 +1,5 @@
 import {
+  applyPagedReaderLayout,
   committedPageBodyHeight,
   derivePagedReaderBehavior,
   resolvePagedReaderForwardAction,
@@ -240,6 +241,28 @@ describe('paged reader behavioral regressions', () => {
     ).toBeLessThan(
       Math.max(...normal.pages.map(page => page.lines.length)),
     );
+  });
+
+  test('stale page-body layout callback cannot overwrite newer geometry', () => {
+    let state = updatePagedReaderGeometry(
+      createPagedReaderState(),
+      BASE_GEOMETRY,
+    );
+    const oldRevision = state.geometryRevision;
+
+    state = applyPagedReaderLayout(state, oldRevision, {
+      ...BASE_GEOMETRY,
+      height: 220,
+    });
+    const current = state;
+
+    state = applyPagedReaderLayout(state, oldRevision, {
+      ...BASE_GEOMETRY,
+      height: 120,
+    });
+
+    expect(state).toBe(current);
+    expect(state.geometry?.height).toBe(220);
   });
 
   test('delayed layout callback from an old geometry revision is ignored', () => {
