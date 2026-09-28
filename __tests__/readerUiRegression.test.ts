@@ -99,13 +99,11 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(app).toContain("color: 'transparent'");
     expect(measurementIndex).toBeGreaterThan(pagesRenderStart);
     expect(measurementIndex).toBeLessThan(interactionIndex);
-    expect(app).toContain(
-      'commitPaginationMeasurement(current, request, lines)',
-    );
+    expect(app).toContain('commitPaginationMeasurement(');
     expect(app).toContain("key={`page-${currentPage.key}`}");
-    expect(app).toContain("{currentPage.lines.join('\\n')}");
+    expect(app).toContain("{currentPage.paragraphs.join('\\n')}");
     expect(app).not.toContain(
-      ".map((paragraph, index) => (",
+      "key={`page-${currentPage?.key ?? 'empty'}-${index}`}",
     );
     expect(app).not.toContain('measurementKeyRef');
     expect(app).not.toContain('readerRevision');
@@ -203,7 +201,12 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
       'Math.min(Math.max(fontScale, 1), READER_MAX_FONT_SIZE_MULTIPLIER)',
     );
     expect(app).toContain('measuredLines.map(line => line.height)');
+    expect(app).toContain('{width: paginationRequest.geometry.width}');
     expect(pagination).toContain('Math.ceil(measuredLineHeight)');
+    expect(pagination).toContain('PAGE_BOTTOM_SAFETY_LINES = 1');
+    expect(pagination).toContain(
+      'measuredCapacity - PAGE_BOTTOM_SAFETY_LINES',
+    );
   });
 
   test('banner lifecycle uses native readiness and immutable per-page reserve metadata', () => {
@@ -303,9 +306,12 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
     expect(app).toContain(
-      'if (pagedReader.currentPageIndex < pagedReader.pages.length - 1) {',
+      'const currentPageIndex = pagedReaderIndexRef.current;',
     );
-    expect(app).toContain('void moveToPage(pagedReader.currentPageIndex + 1);');
+    expect(app).toContain(
+      'if (currentPageIndex < pagedReader.pages.length - 1) {',
+    );
+    expect(app).toContain('void moveToPage(currentPageIndex + 1);');
     expect(app).toContain('openPagedInteraction();');
     expect(app).toContain('onPress={advancePagedReader}');
     expect(app).toContain('onPress={closePagedInteraction}');
