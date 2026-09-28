@@ -19,6 +19,8 @@ export type PagedReaderBehavior = Readonly<{
   interactionVisible: boolean;
   displayedPageNumber: number | null;
   pageBannerActive: boolean;
+  canGoPrevious: boolean;
+  canGoNext: boolean;
 }>;
 
 export type PagedReaderForwardAction =
@@ -57,6 +59,12 @@ export function derivePagedReaderBehavior(
     currentPage !== null &&
     currentPage.bannerReserve > 0 &&
     currentPage.bannerReserve === input.bannerReadyHeight;
+  const canGoPrevious =
+    pageTransitionReady && input.state.currentPageIndex > 0;
+  const canGoNext =
+    pageTransitionReady &&
+    (input.state.currentPageIndex < input.state.pages.length - 1 ||
+      canOpenInteraction);
 
   return Object.freeze({
     currentPage,
@@ -66,6 +74,8 @@ export function derivePagedReaderBehavior(
     interactionVisible,
     displayedPageNumber,
     pageBannerActive,
+    canGoPrevious,
+    canGoNext,
   });
 }
 
