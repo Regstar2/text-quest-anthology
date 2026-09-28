@@ -1,4 +1,9 @@
-import type {PagedReaderState, ReaderPhysicalPage} from './PagedReaderPagination';
+import {
+  updatePagedReaderGeometry,
+  type PagedReaderState,
+  type ReaderPageGeometry,
+  type ReaderPhysicalPage,
+} from './PagedReaderPagination';
 
 export type PagedReaderBehaviorInput = Readonly<{
   state: PagedReaderState;
@@ -106,4 +111,16 @@ export function committedPageBodyHeight(
   }
 
   return measuredHeight + behavior.currentPage.bannerReserve;
+}
+
+export function applyPagedReaderLayout(
+  state: PagedReaderState,
+  expectedGeometryRevision: number,
+  geometry: ReaderPageGeometry,
+): PagedReaderState {
+  if (state.geometryRevision !== expectedGeometryRevision) {
+    return state;
+  }
+
+  return updatePagedReaderGeometry(state, geometry);
 }
