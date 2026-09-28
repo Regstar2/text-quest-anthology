@@ -116,6 +116,26 @@ describe('deterministic paged reader model', () => {
     expect(state.pages[2].bannerReserve).toBe(0);
   });
 
+  test('font scale reduces page capacity so rendered lines cannot run under the footer', () => {
+    const passages = Array.from({length: 12}, (_, index) => `Строка ${index + 1}.`);
+    let state = updatePagedReaderGeometry(createPagedReaderState(), {
+      width: 360,
+      height: 180,
+      fontScale: 1.35,
+    });
+    const request = planPaginationMeasurement(state, passages, 0);
+    if (!request) {
+      throw new Error('Expected pagination request.');
+    }
+
+    state = commitPaginationMeasurement(state, request, request.text.split('\n'));
+
+    expect(state.pages).toHaveLength(3);
+    expect(state.pages[0].paragraphs).toHaveLength(4);
+    expect(state.pages[1].paragraphs).toHaveLength(4);
+    expect(state.pages[2].paragraphs).toHaveLength(4);
+  });
+
   test('late banner readiness affects only newly appended physical pages', () => {
     const firstPassages = Array.from(
       {length: 12},
