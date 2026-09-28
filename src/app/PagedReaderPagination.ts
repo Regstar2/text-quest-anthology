@@ -5,6 +5,7 @@ import {
 
 export const STORY_LINE_HEIGHT = 28;
 export const READER_MAX_FONT_SIZE_MULTIPLIER = 1.35;
+export const PAGE_BOTTOM_SAFETY_LINES = 1;
 export const PAGE_VERTICAL_PADDING = 12;
 export const CHOICE_GAP = 8;
 export const PARAGRAPH_INDENT = '\u2003\u2003';
@@ -569,10 +570,10 @@ function getPageLineCapacity(
     bannerReserve,
     pagesPerBanner,
   );
-  return Math.max(
-    1,
-    Math.floor((contentHeight - reservedForBanner) / effectiveLineHeight),
+  const measuredCapacity = Math.floor(
+    (contentHeight - reservedForBanner) / effectiveLineHeight,
   );
+  return Math.max(1, measuredCapacity - PAGE_BOTTOM_SAFETY_LINES);
 }
 
 function getPageBannerReserve(
