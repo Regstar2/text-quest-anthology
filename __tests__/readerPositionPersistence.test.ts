@@ -30,8 +30,8 @@ describe('semantic reader position persistence', () => {
     const anchor = {passageIndex: 0, characterOffset: 17};
 
     await opened.session.flush();
-    const moved = await opened.session.setPage(2, anchor);
-    expect(moved.snapshot.pageIndex).toBe(2);
+    const moved = await opened.session.setPage(7, anchor);
+    expect(moved.snapshot.pageIndex).toBe(7);
     expect(moved.snapshot.pageAnchor).toEqual(anchor);
 
     const stored = await repository.load('zavalinka');
@@ -46,12 +46,12 @@ describe('semantic reader position persistence', () => {
     if (cursor.status !== 'loaded') {
       throw new Error('Expected persisted reader cursor.');
     }
-    expect(cursor.cursor.pageIndex).toBe(2);
+    expect(cursor.cursor.pageIndex).toBe(7);
     expect(cursor.cursor.pageAnchor).toEqual(anchor);
 
     const restored = await StorySession.open(storyPackage, repository);
     expect(restored.resumed).toBe(true);
-    expect(restored.snapshot.pageIndex).toBe(2);
+    expect(restored.snapshot.pageIndex).toBe(7);
     expect(restored.snapshot.pageAnchor).toEqual(anchor);
   });
 
