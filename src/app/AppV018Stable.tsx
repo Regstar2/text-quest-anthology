@@ -869,13 +869,19 @@ export function App(): React.JSX.Element {
   const commitMeasuredLines = (
     request: PaginationMeasurementRequest,
     lines: readonly string[],
+    measuredLineHeight?: number,
   ) => {
     if (lines.length === 0) {
       return;
     }
 
     setPagedReader(current =>
-      commitPaginationMeasurement(current, request, lines),
+      commitPaginationMeasurement(
+        current,
+        request,
+        lines,
+        measuredLineHeight,
+      ),
     );
     setPaginationRequest(current =>
       current?.key === request.key ? null : current,
@@ -1614,9 +1620,11 @@ export function App(): React.JSX.Element {
                     key={`measurement-${paginationRequest.key}`}
                     maxFontSizeMultiplier={READER_MAX_FONT_SIZE_MULTIPLIER}
                     onTextLayout={(event: TextLayoutEvent) => {
+                      const measuredLines = event.nativeEvent.lines;
                       commitMeasuredLines(
                         paginationRequest,
-                        event.nativeEvent.lines.map(line => line.text),
+                        measuredLines.map(line => line.text),
+                        Math.max(...measuredLines.map(line => line.height)),
                       );
                     }}
                     pointerEvents="none"
@@ -1693,7 +1701,7 @@ export function App(): React.JSX.Element {
                               styles.storyParagraph,
                               {color: readerPalette.text},
                             ]}>
-                            {currentPage.paragraphs.join('\n')}
+                            {currentPage.lines.join('\n')}
                           </Text>
                         ) : null}
 
