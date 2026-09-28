@@ -1630,7 +1630,10 @@ export function App(): React.JSX.Element {
                       );
                     }}
                     pointerEvents="none"
-                    style={styles.measureText}>
+                    style={[
+                      styles.measureText,
+                      {width: paginationRequest.geometry.width},
+                    ]}>
                     {paginationRequest.text}
                   </Text>
                 ) : null}
@@ -1703,7 +1706,7 @@ export function App(): React.JSX.Element {
                               styles.storyParagraph,
                               {color: readerPalette.text},
                             ]}>
-                            {currentPage.lines.join('\n')}
+                            {currentPage.paragraphs.join('\n')}
                           </Text>
                         ) : null}
 
