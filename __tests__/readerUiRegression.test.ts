@@ -102,7 +102,11 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(app).toContain(
       'commitPaginationMeasurement(current, request, lines)',
     );
-    expect(app).toContain("key={`page-${currentPage?.key ?? 'empty'}-${index}`}");
+    expect(app).toContain("key={`page-${currentPage.key}`}");
+    expect(app).toContain("{currentPage.paragraphs.join('\\n')}");
+    expect(app).not.toContain(
+      ".map((paragraph, index) => (",
+    );
     expect(app).not.toContain('measurementKeyRef');
     expect(app).not.toContain('readerRevision');
   });
@@ -113,6 +117,10 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
 
     expect(app).toContain(
       'const [pagedReader, setPagedReader] = useState(createPagedReaderState);',
+    );
+    expect(app).toContain('const pagedReaderIndexRef = useRef(0);');
+    expect(app).toContain(
+      'pagedReaderIndexRef.current = pagedReader.currentPageIndex;',
     );
     expect(pagination).toContain('currentPageIndex: number;');
     expect(pagination).toContain('geometryRevision: number;');
@@ -141,6 +149,13 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(app).toContain('const pageUpdate = session.setPage(');
     expect(app).toContain('nextPageIndex, nextPage.anchor');
     expect(app).toContain('void pageUpdate.persistence.then(persisted => {');
+    expect(app).toContain(
+      'const previousPageIndex = pagedReaderIndexRef.current;',
+    );
+    expect(app).toContain('pagedReaderIndexRef.current = nextPageIndex;');
+    expect(app).toContain(
+      'void moveToPage(pagedReaderIndexRef.current - 1);',
+    );
     expect(app).not.toContain(
       'await session.setPage(nextPageIndex, nextPage.anchor)',
     );
@@ -182,6 +197,10 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(pagination).toContain('restoreAnchor: currentPage?.anchor ?? state.restoreAnchor,');
     expect(pagination).toContain('function restorePageIndex(');
     expect(pagination).toContain('compareReaderSemanticAnchors');
+    expect(pagination).toContain('READER_MAX_FONT_SIZE_MULTIPLIER = 1.35');
+    expect(pagination).toContain(
+      'Math.min(Math.max(fontScale, 1), READER_MAX_FONT_SIZE_MULTIPLIER)',
+    );
   });
 
   test('banner lifecycle uses native readiness and immutable per-page reserve metadata', () => {
