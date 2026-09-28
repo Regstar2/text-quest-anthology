@@ -103,7 +103,7 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
       'commitPaginationMeasurement(current, request, lines)',
     );
     expect(app).toContain("key={`page-${currentPage.key}`}");
-    expect(app).toContain("{currentPage.paragraphs.join('\\n')}");
+    expect(app).toContain("{currentPage.lines.join('\\n')}");
     expect(app).not.toContain(
       ".map((paragraph, index) => (",
     );
@@ -125,6 +125,7 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(pagination).toContain('currentPageIndex: number;');
     expect(pagination).toContain('geometryRevision: number;');
     expect(pagination).toContain('pages: readonly ReaderPhysicalPage[];');
+    expect(pagination).toContain('lines: readonly string[];');
     expect(app).not.toContain('setReaderPageIndex');
     expect(app).not.toContain('setPageNumber(');
     expect(app).not.toContain('.current = {');
@@ -201,6 +202,8 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(pagination).toContain(
       'Math.min(Math.max(fontScale, 1), READER_MAX_FONT_SIZE_MULTIPLIER)',
     );
+    expect(app).toContain('measuredLines.map(line => line.height)');
+    expect(pagination).toContain('Math.ceil(measuredLineHeight)');
   });
 
   test('banner lifecycle uses native readiness and immutable per-page reserve metadata', () => {
