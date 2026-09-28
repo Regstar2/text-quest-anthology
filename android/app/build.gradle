@@ -9,12 +9,37 @@ react {
 def enableProguardInReleaseBuilds = false
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def yandexDemoBannerAdUnitId = "demo-banner-yandex"
+def yandexDemoInterstitialAdUnitId = "demo-interstitial-yandex"
+def yandexProductionBannerAdUnitId = "R-M-20131427-1"
+def yandexProductionInterstitialAdUnitId = "R-M-20131427-2"
+
+def buildConfigString = { String value -> '"' + value + '"' }
+
+def validateProductionAdUnitId = { String name, String value ->
+    if (value == null || value.trim().isEmpty()) {
+        throw new GradleException(name + " must be configured for release builds.")
+    }
+
+    if (
+        value == yandexDemoBannerAdUnitId ||
+        value == yandexDemoInterstitialAdUnitId ||
+        value.startsWith("demo-")
+    ) {
+        throw new GradleException(name + " must not use a Yandex demo placement in release builds.")
+    }
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "io.github.regstar2.textquestanthology"
+
+    buildFeatures {
+        buildConfig true
+    }
 
     defaultConfig {
         applicationId "io.github.regstar2.textquestanthology"
@@ -28,11 +53,33 @@ android {
     buildTypes {
         debug {
             manifestPlaceholders = [usesCleartextTraffic: "true"]
+            buildConfigField "String", "YANDEX_AD_DISTRIBUTION", buildConfigString("rustore-dev")
+            buildConfigField "String", "YANDEX_BANNER_AD_UNIT_ID", buildConfigString(yandexDemoBannerAdUnitId)
+            buildConfigField "String", "YANDEX_INTERSTITIAL_AD_UNIT_ID", buildConfigString(yandexDemoInterstitialAdUnitId)
         }
         release {
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            buildConfigField "String", "YANDEX_AD_DISTRIBUTION", buildConfigString("rustore")
+            buildConfigField "String", "YANDEX_BANNER_AD_UNIT_ID", buildConfigString(yandexProductionBannerAdUnitId)
+            buildConfigField "String", "YANDEX_INTERSTITIAL_AD_UNIT_ID", buildConfigString(yandexProductionInterstitialAdUnitId)
         }
+    }
+}
+
+tasks.register("validateReleaseAdsConfig") {
+    group = "verification"
+    description = "Fails when release Yandex Ads configuration is missing or uses demo placement IDs."
+
+    doLast {
+        validateProductionAdUnitId("YANDEX_BANNER_AD_UNIT_ID", yandexProductionBannerAdUnitId)
+        validateProductionAdUnitId("YANDEX_INTERSTITIAL_AD_UNIT_ID", yandexProductionInterstitialAdUnitId)
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == "preReleaseBuild") {
+        task.dependsOn("validateReleaseAdsConfig")
     }
 }
 
