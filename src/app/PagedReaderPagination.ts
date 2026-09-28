@@ -23,6 +23,7 @@ export type ReaderPhysicalPage = Readonly<{
   geometryRevision: number;
   pageIndex: number;
   paragraphs: readonly string[];
+  lines: readonly string[];
   anchor: ReaderSemanticAnchor;
   bannerReserve: number;
 }>;
@@ -196,6 +197,7 @@ export function commitPaginationMeasurement(
   state: PagedReaderState,
   request: PaginationMeasurementRequest,
   rawLines: readonly string[],
+  measuredLineHeight?: number,
 ): PagedReaderState {
   if (
     rawLines.length === 0 ||
@@ -219,6 +221,7 @@ export function commitPaginationMeasurement(
     measuredLines,
     request.geometry.height,
     request.geometry.fontScale,
+    measuredLineHeight,
     request.bannerReserve,
     request.pagesPerBanner,
     request.geometryRevision,
@@ -398,6 +401,7 @@ function paginateMeasuredLines(
   measuredLines: readonly AnchoredMeasuredLine[],
   pageHeight: number,
   fontScale: number,
+  measuredLineHeight: number | undefined,
   bannerReserve: number,
   pagesPerBanner: number,
   geometryRevision: number,
@@ -407,9 +411,15 @@ function paginateMeasuredLines(
     return EMPTY_PAGES;
   }
 
-  const effectiveLineHeight =
+  const fallbackLineHeight =
     STORY_LINE_HEIGHT *
     Math.min(Math.max(fontScale, 1), READER_MAX_FONT_SIZE_MULTIPLIER);
+  const effectiveLineHeight =
+    measuredLineHeight !== undefined &&
+    Number.isFinite(measuredLineHeight) &&
+    measuredLineHeight > 0
+      ? Math.ceil(measuredLineHeight)
+      : fallbackLineHeight;
   const contentHeight = Math.max(
     effectiveLineHeight,
     pageHeight - PAGE_VERTICAL_PADDING,
@@ -584,9 +594,15 @@ function createPhysicalPage(
   bannerReserve: number,
 ): ReaderPhysicalPage {
   const anchor = lines[0]?.anchor ?? {passageIndex: 0, characterOffset: 0};
-  const paragraphs = Object.freeze(pageLinesToParagraphs(lines.map(line => line.text)));
+  const rawLines = lines.map(line => line.text);
+  const paragraphs = Object.freeze(pageLinesToParagraphs(rawLines));
+  const visibleLines = Object.freeze(
+    rawLines.map(line =>
+      line.split(PARAGRAPH_BREAK_MARKER).join('').trimEnd(),
+    ),
+  );
   const key = `${geometryRevision}:${pageIndex}:${bannerReserve}:${anchor.passageIndex}:${anchor.characterOffset}:${hashText(
-    paragraphs.join('\n'),
+    visibleLines.join('\n'),
   )}`;
 
   return Object.freeze({
@@ -594,6 +610,7 @@ function createPhysicalPage(
     geometryRevision,
     pageIndex,
     paragraphs,
+    lines: visibleLines,
     anchor: Object.freeze({...anchor}),
     bannerReserve,
   });
