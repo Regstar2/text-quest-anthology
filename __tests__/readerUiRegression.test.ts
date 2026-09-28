@@ -66,8 +66,17 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
       "readerMode === 'pages' ? pagedReader.currentPageIndex + 1 : undefined;",
     );
     expect(app).toContain(
+      'const result = session.choose(choiceIndex, nextReaderPageIndex);',
+    );
+    expect(app).not.toContain(
       'const result = await session.choose(choiceIndex, nextReaderPageIndex);',
     );
+    const snapshotCommit = app.indexOf('setSnapshot(result.snapshot);');
+    const persistenceAwait = app.indexOf(
+      'const persisted = await result.persistence;',
+    );
+    expect(snapshotCommit).toBeGreaterThan(-1);
+    expect(persistenceAwait).toBeGreaterThan(snapshotCommit);
     expect(app).toContain('void recordEnding(activeStory.id, result.snapshot);');
     expect(app).not.toContain('stablePageFrameRef');
     expect(app).not.toContain('lastPageNumberRef');
@@ -90,10 +99,12 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(app).toContain("color: 'transparent'");
     expect(measurementIndex).toBeGreaterThan(pagesRenderStart);
     expect(measurementIndex).toBeLessThan(interactionIndex);
-    expect(app).toContain(
-      'commitPaginationMeasurement(current, request, lines)',
+    expect(app).toContain('commitPaginationMeasurement(');
+    expect(app).toContain("key={`page-${currentPage.key}`}");
+    expect(app).toContain("{currentPage.paragraphs.join('\\n')}");
+    expect(app).not.toContain(
+      "key={`page-${currentPage?.key ?? 'empty'}-${index}`}",
     );
-    expect(app).toContain("key={`page-${currentPage?.key ?? 'empty'}-${index}`}");
     expect(app).not.toContain('measurementKeyRef');
     expect(app).not.toContain('readerRevision');
   });
@@ -105,9 +116,14 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(app).toContain(
       'const [pagedReader, setPagedReader] = useState(createPagedReaderState);',
     );
+    expect(app).toContain('const pagedReaderIndexRef = useRef(0);');
+    expect(app).toContain(
+      'pagedReaderIndexRef.current = pagedReader.currentPageIndex;',
+    );
     expect(pagination).toContain('currentPageIndex: number;');
     expect(pagination).toContain('geometryRevision: number;');
     expect(pagination).toContain('pages: readonly ReaderPhysicalPage[];');
+    expect(pagination).toContain('lines: readonly string[];');
     expect(app).not.toContain('setReaderPageIndex');
     expect(app).not.toContain('setPageNumber(');
     expect(app).not.toContain('.current = {');
@@ -129,12 +145,24 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     const app = source('src/app/AppV018Stable.tsx');
     const pagination = source('src/app/PagedReaderPagination.ts');
 
+    expect(app).toContain('const pageUpdate = session.setPage(');
+    expect(app).toContain('nextPageIndex, nextPage.anchor');
+    expect(app).toContain('void pageUpdate.persistence.then(persisted => {');
     expect(app).toContain(
-      'setPagedReader(current => movePagedReaderToPage(current, nextPageIndex));',
+      'const previousPageIndex = pagedReaderIndexRef.current;',
     );
+    expect(app).toContain('pagedReaderIndexRef.current = nextPageIndex;');
     expect(app).toContain(
-      'const result = await session.setPage(nextPageIndex, nextPage.anchor);',
+      'void moveToPage(pagedReaderIndexRef.current - 1);',
     );
+    expect(app).not.toContain(
+      'await session.setPage(nextPageIndex, nextPage.anchor)',
+    );
+    const moveStart = app.indexOf('const moveToPage = useCallback(');
+    const moveEnd = app.indexOf('const openPagedInteraction', moveStart);
+    const moveSource = app.slice(moveStart, moveEnd);
+    expect(moveSource).not.toContain('beginMutation()');
+    expect(moveSource).not.toContain('setSnapshot(');
     expect(pagination).toContain(': {...state, currentPageIndex};');
     expect(app).not.toContain('setPaginationRequest(' + 'planPaginationMeasurement');
   });
@@ -168,6 +196,17 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(pagination).toContain('restoreAnchor: currentPage?.anchor ?? state.restoreAnchor,');
     expect(pagination).toContain('function restorePageIndex(');
     expect(pagination).toContain('compareReaderSemanticAnchors');
+    expect(pagination).toContain('READER_MAX_FONT_SIZE_MULTIPLIER = 1.35');
+    expect(pagination).toContain(
+      'Math.min(Math.max(fontScale, 1), READER_MAX_FONT_SIZE_MULTIPLIER)',
+    );
+    expect(app).toContain('measuredLines.map(line => line.height)');
+    expect(app).toContain('{width: paginationRequest.geometry.width}');
+    expect(pagination).toContain('Math.ceil(measuredLineHeight)');
+    expect(pagination).toContain('PAGE_BOTTOM_SAFETY_LINES = 1');
+    expect(pagination).toContain(
+      'measuredCapacity - PAGE_BOTTOM_SAFETY_LINES',
+    );
   });
 
   test('banner lifecycle uses native readiness and immutable per-page reserve metadata', () => {
@@ -218,6 +257,19 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(nativeModule).toContain('const val EVENT_NAME = "NativeBannerStateChanged"');
   });
 
+  test('reader cursor uses non-blocking native writes while narrative saves stay durable', () => {
+    const storage = source(
+      'android/app/src/main/java/io/github/regstar2/textquestanthology/StorySaveStorageModule.kt',
+    );
+
+    expect(storage).toMatch(
+      /fun setItem\([\s\S]*?putString\(key, value\)\.commit\(\)/,
+    );
+    expect(storage).toMatch(
+      /fun setItemDeferred\([\s\S]*?putString\(key, value\)\.apply\(\)/,
+    );
+  });
+
   test('reader notice is an overlay and cannot participate in page layout', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
@@ -254,9 +306,12 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     const app = source('src/app/AppV018Stable.tsx');
 
     expect(app).toContain(
-      'if (pagedReader.currentPageIndex < pagedReader.pages.length - 1) {',
+      'const currentPageIndex = pagedReaderIndexRef.current;',
     );
-    expect(app).toContain('void moveToPage(pagedReader.currentPageIndex + 1);');
+    expect(app).toContain(
+      'if (currentPageIndex < pagedReader.pages.length - 1) {',
+    );
+    expect(app).toContain('void moveToPage(currentPageIndex + 1);');
     expect(app).toContain('openPagedInteraction();');
     expect(app).toContain('onPress={advancePagedReader}');
     expect(app).toContain('onPress={closePagedInteraction}');
@@ -270,6 +325,8 @@ describe('v0.3.0 deterministic paged reader regressions', () => {
     expect(session).toContain('pageAnchor: ReaderSemanticAnchor | null;');
     expect(session).toContain('readerPageAnchor: this.readerPageAnchor,');
     expect(repository).toContain('readerPageAnchor?: ReaderSemanticAnchor | null;');
+    expect(repository).toContain('export type ReaderCursor = Readonly<{');
+    expect(repository).toContain('pageAnchor: ReaderSemanticAnchor | null;');
     expect(repository).toContain('isOptionalReaderPageAnchor(value.readerPageAnchor)');
   });
 

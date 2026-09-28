@@ -1,3 +1,4 @@
+import {InkStoryRuntime} from '../src/narrative/InkStoryRuntime';
 import {
   READER_PAGE_BREAK_MARKER,
   StorySession,
@@ -12,12 +13,20 @@ import {
 
 class MemoryStorySaveStorage implements StorySaveStorage {
   private readonly values = new Map<string, string>();
+  readonly writes: string[] = [];
+  readonly deferredWrites: string[] = [];
 
   async getItem(key: string): Promise<string | null> {
     return this.values.get(key) ?? null;
   }
 
   async setItem(key: string, value: string): Promise<void> {
+    this.writes.push(key);
+    this.values.set(key, value);
+  }
+
+  async setItemDeferred(key: string, value: string): Promise<void> {
+    this.deferredWrites.push(key);
     this.values.set(key, value);
   }
 
@@ -27,6 +36,11 @@ class MemoryStorySaveStorage implements StorySaveStorage {
 
   seed(key: string, value: string): void {
     this.values.set(key, value);
+  }
+
+  clearWriteLog(): void {
+    this.writes.length = 0;
+    this.deferredWrites.length = 0;
   }
 }
 
@@ -53,22 +67,38 @@ describe('StorySession persistence flow', () => {
     expect(opened.snapshot.text).toContain('целые стёкла');
   });
 
-  test('page index and full current text survive cold resume', async () => {
-    const repository = new StorySaveRepository(new MemoryStorySaveStorage());
+  test('page cursor survives cold resume without rewriting narrative state', async () => {
+    const storage = new MemoryStorySaveStorage();
+    const repository = new StorySaveRepository(storage);
     const opened = await StorySession.open(STORY_PACKAGE, repository);
     const expectedText = opened.snapshot.text;
+
+    await opened.session.flush();
+    storage.clearWriteLog();
+
     const moved = await opened.session.setPage(1);
 
     expect(moved.persisted).toBe(true);
     expect(moved.snapshot.pageIndex).toBe(1);
+    expect(storage.writes).toHaveLength(0);
+    expect(storage.deferredWrites).toEqual([
+      'text-quest-anthology.reader-cursor.zavalinka',
+    ]);
 
     const stored = await repository.load('zavalinka');
     expect(stored.status).toBe('loaded');
     if (stored.status !== 'loaded') {
-      throw new Error('Expected saved reader state.');
+      throw new Error('Expected saved narrative state.');
     }
-    expect(stored.save.readerPageIndex).toBe(1);
+    expect(stored.save.readerPageIndex).toBe(0);
     expect(stored.save.readerCurrentText).toBe(expectedText);
+
+    const cursor = await repository.loadReaderCursor('zavalinka');
+    expect(cursor.status).toBe('loaded');
+    if (cursor.status !== 'loaded') {
+      throw new Error('Expected saved reader cursor.');
+    }
+    expect(cursor.cursor.pageIndex).toBe(1);
 
     const restored = await StorySession.open(STORY_PACKAGE, repository);
     expect(restored.resumed).toBe(true);
@@ -81,8 +111,95 @@ describe('StorySession persistence flow', () => {
     const repository = new StorySaveRepository(new MemoryStorySaveStorage());
     const opened = await StorySession.open(STORY_PACKAGE, repository);
 
-    await expect(opened.session.setPage(-1)).rejects.toThrow('READER_PAGE_INVALID');
-    await expect(opened.session.setPage(1.5)).rejects.toThrow('READER_PAGE_INVALID');
+    expect(() => opened.session.setPage(-1)).toThrow('READER_PAGE_INVALID');
+    expect(() => opened.session.setPage(1.5)).toThrow('READER_PAGE_INVALID');
+  });
+
+  test('20+ rapid page turns coalesce cursor writes without exporting Ink state', async () => {
+    jest.useFakeTimers();
+    const storage = new MemoryStorySaveStorage();
+    const repository = new StorySaveRepository(storage);
+    const opened = await StorySession.open(STORY_PACKAGE, repository);
+
+    try {
+      await opened.session.flush();
+      storage.clearWriteLog();
+      const exportState = jest.spyOn(InkStoryRuntime.prototype, 'exportState');
+
+      let latest = opened.session.setPage(1, {
+        passageIndex: 0,
+        characterOffset: 1,
+      });
+      for (let index = 2; index <= 21; index += 1) {
+        latest = opened.session.setPage(index, {
+          passageIndex: 0,
+          characterOffset: index,
+        });
+      }
+
+      expect(exportState).not.toHaveBeenCalled();
+      expect(storage.writes).toHaveLength(0);
+      expect(storage.deferredWrites).toHaveLength(0);
+
+      jest.advanceTimersByTime(1000);
+      const persisted = await latest.persistence;
+
+      expect(persisted).toBe(true);
+      expect(exportState).not.toHaveBeenCalled();
+      expect(storage.writes).toHaveLength(0);
+      expect(storage.deferredWrites).toEqual([
+        'text-quest-anthology.reader-cursor.zavalinka',
+      ]);
+
+      const cursor = await repository.loadReaderCursor('zavalinka');
+      expect(cursor.status).toBe('loaded');
+      if (cursor.status !== 'loaded') {
+        throw new Error('Expected saved reader cursor.');
+      }
+      expect(cursor.cursor.pageIndex).toBe(21);
+      expect(cursor.cursor.pageAnchor).toEqual({
+        passageIndex: 0,
+        characterOffset: 21,
+      });
+
+      exportState.mockRestore();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('choice snapshot is available before deferred narrative persistence runs', async () => {
+    jest.useFakeTimers();
+    const storage = new MemoryStorySaveStorage();
+    const repository = new StorySaveRepository(storage);
+    const opened = await StorySession.open(STORY_PACKAGE, repository);
+
+    try {
+      await opened.session.flush();
+      storage.clearWriteLog();
+      const exportState = jest.spyOn(InkStoryRuntime.prototype, 'exportState');
+
+      const result = opened.session.choose(
+        findChoice(opened.snapshot, 'Пока не стемнело, идти к дому'),
+      );
+
+      expect(result.snapshot.text).toContain(
+        'К дому с целыми окнами они подошли уже в сумерках',
+      );
+      expect(exportState).not.toHaveBeenCalled();
+      expect(storage.writes).toHaveLength(0);
+
+      jest.advanceTimersByTime(0);
+      expect(await result.persistence).toBe(true);
+      expect(exportState).toHaveBeenCalledTimes(1);
+      expect(storage.writes).toEqual([
+        'text-quest-anthology.story-save.zavalinka',
+      ]);
+
+      exportState.mockRestore();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('choice starts a fresh physical page and keeps the feed transcript', async () => {

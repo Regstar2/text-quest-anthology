@@ -59,6 +59,7 @@ import {
   CHOICE_GAP,
   FORCED_PAGE_BREAK_MARKER,
   PAGE_VERTICAL_PADDING,
+  READER_MAX_FONT_SIZE_MULTIPLIER,
   STORY_LINE_HEIGHT,
   commitPaginationMeasurement,
   createPagedReaderState,
@@ -104,6 +105,7 @@ export function App(): React.JSX.Element {
   const {fontScale} = useWindowDimensions();
   const sessionRef = useRef<StorySession | null>(null);
   const mutationLockRef = useRef(false);
+  const pagedReaderIndexRef = useRef(0);
   const hasStartedSessionRef = useRef(false);
   const feedChoiceCountRef = useRef(0);
 
@@ -147,6 +149,7 @@ export function App(): React.JSX.Element {
       pageAnchor: StoryReaderSnapshot['pageAnchor'],
       fallbackPageIndex: number,
     ): void => {
+      pagedReaderIndexRef.current = 0;
       setPagedReader(current =>
         resetPagedReaderState(current, pageAnchor, fallbackPageIndex),
       );
@@ -500,7 +503,7 @@ export function App(): React.JSX.Element {
       readerMode === 'pages' ? pagedReader.currentPageIndex + 1 : undefined;
 
     try {
-      const result = await session.choose(choiceIndex, nextReaderPageIndex);
+      const result = session.choose(choiceIndex, nextReaderPageIndex);
 
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
@@ -508,7 +511,6 @@ export function App(): React.JSX.Element {
         setPagedInteractionTargetPassageCount(result.snapshot.passages.length);
       }
       setSnapshot(result.snapshot);
-      setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
 
       if (readerMode === 'feed') {
         const nextChoiceCount = feedChoiceCountRef.current + 1;
@@ -523,6 +525,9 @@ export function App(): React.JSX.Element {
       }
 
       setScreen('reader');
+
+      const persisted = await result.persistence;
+      setNotice(persisted ? null : UI_STRINGS.saveFailed);
     } catch {
       setNotice(UI_STRINGS.storyActionFailed);
     } finally {
@@ -566,6 +571,10 @@ export function App(): React.JSX.Element {
     () => buildReaderParagraphs(snapshot),
     [snapshot],
   );
+  useEffect(() => {
+    pagedReaderIndexRef.current = pagedReader.currentPageIndex;
+  }, [pagedReader.currentPageIndex]);
+
   useEffect(() => {
     if (readerMode !== 'pages') {
       return;
@@ -665,13 +674,12 @@ export function App(): React.JSX.Element {
   ]);
 
   const moveToPage = useCallback(
-    async (requestedPageIndex: number) => {
+    (requestedPageIndex: number) => {
       const session = sessionRef.current;
       if (
         !session ||
-        !snapshot ||
-        pagedReader.pages.length === 0 ||
-        !beginMutation()
+        mutationLockRef.current ||
+        pagedReader.pages.length === 0
       ) {
         return;
       }
@@ -680,38 +688,34 @@ export function App(): React.JSX.Element {
         requestedPageIndex,
         pagedReader.pages.length,
       );
-      const previousPageIndex = pagedReader.currentPageIndex;
+      const previousPageIndex = pagedReaderIndexRef.current;
       if (nextPageIndex === previousPageIndex) {
-        endMutation();
         return;
       }
 
       const nextPage = pagedReader.pages[nextPageIndex];
-      setPagedInteractionVisible(false);
-      setPagedInteractionSnapshot(null);
-      setPagedInteractionTargetPassageCount(null);
-      setPagedReader(current => movePagedReaderToPage(current, nextPageIndex));
 
       try {
-        const result = await session.setPage(nextPageIndex, nextPage.anchor);
-        setSnapshot(result.snapshot);
-        setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
-      } catch {
+        const pageUpdate = session.setPage(nextPageIndex, nextPage.anchor);
+        pagedReaderIndexRef.current = nextPageIndex;
+        setPagedInteractionVisible(false);
+        setPagedInteractionSnapshot(null);
+        setPagedInteractionTargetPassageCount(null);
         setPagedReader(current =>
-          movePagedReaderToPage(current, previousPageIndex),
+          movePagedReaderToPage(current, nextPageIndex),
         );
+
+        void pageUpdate.persistence.then(persisted => {
+          if (!persisted && sessionRef.current === session) {
+            setNotice(UI_STRINGS.saveFailed);
+          }
+        });
+      } catch {
+        pagedReaderIndexRef.current = previousPageIndex;
         setNotice(UI_STRINGS.storyActionFailed);
-      } finally {
-        endMutation();
       }
     },
-    [
-      beginMutation,
-      endMutation,
-      pagedReader.currentPageIndex,
-      pagedReader.pages,
-      snapshot,
-    ],
+    [pagedReader.pages],
   );
 
   const openPagedInteraction = useCallback((): void => {
@@ -737,8 +741,9 @@ export function App(): React.JSX.Element {
       return;
     }
 
-    if (pagedReader.currentPageIndex < pagedReader.pages.length - 1) {
-      void moveToPage(pagedReader.currentPageIndex + 1);
+    const currentPageIndex = pagedReaderIndexRef.current;
+    if (currentPageIndex < pagedReader.pages.length - 1) {
+      void moveToPage(currentPageIndex + 1);
       return;
     }
 
@@ -748,7 +753,6 @@ export function App(): React.JSX.Element {
     moveToPage,
     openPagedInteraction,
     pageTransitionReady,
-    pagedReader.currentPageIndex,
     pagedReader.pages.length,
   ]);
 
@@ -777,7 +781,7 @@ export function App(): React.JSX.Element {
 
           void moveToPage(
             pageAfterHorizontalSwipe(
-              pagedReader.currentPageIndex,
+              pagedReaderIndexRef.current,
               pagedReader.pages.length,
               gestureState.dx,
             ),
@@ -789,7 +793,6 @@ export function App(): React.JSX.Element {
       isBusy,
       moveToPage,
       pageTransitionReady,
-      pagedReader.currentPageIndex,
       pagedReader.pages.length,
       readerMode,
     ],
@@ -838,7 +841,7 @@ export function App(): React.JSX.Element {
           pageTransitionReady &&
           pagedReader.currentPageIndex > 0
         ) {
-          void moveToPage(pagedReader.currentPageIndex - 1);
+          void moveToPage(pagedReaderIndexRef.current - 1);
           return true;
         }
 
@@ -866,13 +869,19 @@ export function App(): React.JSX.Element {
   const commitMeasuredLines = (
     request: PaginationMeasurementRequest,
     lines: readonly string[],
+    measuredLineHeight?: number,
   ) => {
     if (lines.length === 0) {
       return;
     }
 
     setPagedReader(current =>
-      commitPaginationMeasurement(current, request, lines),
+      commitPaginationMeasurement(
+        current,
+        request,
+        lines,
+        measuredLineHeight,
+      ),
     );
     setPaginationRequest(current =>
       current?.key === request.key ? null : current,
@@ -926,7 +935,7 @@ export function App(): React.JSX.Element {
                 (isBusy || !enabled) && styles.disabled,
               ]}>
               <Text
-                maxFontSizeMultiplier={1.35}
+                maxFontSizeMultiplier={READER_MAX_FONT_SIZE_MULTIPLIER}
                 style={[
                   styles.choiceText,
                   {color: choice.enabled ? readerPalette.text : readerPalette.muted},
@@ -1418,7 +1427,7 @@ export function App(): React.JSX.Element {
                     {item.metadata.title}
                   </Text>
                   <Text
-                    maxFontSizeMultiplier={1.35}
+                    maxFontSizeMultiplier={READER_MAX_FONT_SIZE_MULTIPLIER}
                     style={[
                       styles.catalogCardDescription,
                       {color: appColors.muted},
@@ -1589,7 +1598,7 @@ export function App(): React.JSX.Element {
                     {formatEndingDisplay(ending.id)}
                   </Text>
                   <Text
-                    maxFontSizeMultiplier={1.35}
+                    maxFontSizeMultiplier={READER_MAX_FONT_SIZE_MULTIPLIER}
                     style={[styles.endingCardText, {color: appColors.muted}]}>
                     {ending.text}
                   </Text>
@@ -1609,15 +1618,22 @@ export function App(): React.JSX.Element {
                 {paginationRequest ? (
                   <Text
                     key={`measurement-${paginationRequest.key}`}
-                    maxFontSizeMultiplier={1.35}
+                    maxFontSizeMultiplier={READER_MAX_FONT_SIZE_MULTIPLIER}
                     onTextLayout={(event: TextLayoutEvent) => {
+                      const measuredLines = event.nativeEvent.lines;
                       commitMeasuredLines(
                         paginationRequest,
-                        event.nativeEvent.lines.map(line => line.text),
+                        measuredLines.map(line => line.text),
+                        measuredLines.length > 0
+                          ? Math.max(...measuredLines.map(line => line.height))
+                          : undefined,
                       );
                     }}
                     pointerEvents="none"
-                    style={styles.measureText}>
+                    style={[
+                      styles.measureText,
+                      {width: paginationRequest.geometry.width},
+                    ]}>
                     {paginationRequest.text}
                   </Text>
                 ) : null}
@@ -1682,20 +1698,17 @@ export function App(): React.JSX.Element {
                         {...pagePanResponder.panHandlers}
                         collapsable={false}
                         style={styles.pageTextArea}>
-                        {(pageTransitionReady
-                          ? currentPage?.paragraphs ?? []
-                          : []
-                        ).map((paragraph, index) => (
+                        {pageTransitionReady && currentPage ? (
                           <Text
-                            key={`page-${currentPage?.key ?? 'empty'}-${index}`}
-                            maxFontSizeMultiplier={1.35}
+                            key={`page-${currentPage.key}`}
+                            maxFontSizeMultiplier={READER_MAX_FONT_SIZE_MULTIPLIER}
                             style={[
                               styles.storyParagraph,
                               {color: readerPalette.text},
                             ]}>
-                            {paragraph}
+                            {currentPage.paragraphs.join('\n')}
                           </Text>
-                        ))}
+                        ) : null}
 
                         <View pointerEvents="box-none" style={styles.tapZones}>
                           <Pressable
@@ -1706,7 +1719,7 @@ export function App(): React.JSX.Element {
                               pagedReader.currentPageIndex === 0
                             }
                             onPress={() => {
-                              void moveToPage(pagedReader.currentPageIndex - 1);
+                              void moveToPage(pagedReaderIndexRef.current - 1);
                             }}
                             style={styles.tapZone}
                           />
@@ -1736,7 +1749,7 @@ export function App(): React.JSX.Element {
                           pagedReader.currentPageIndex === 0
                         }
                         onPress={() => {
-                          void moveToPage(pagedReader.currentPageIndex - 1);
+                          void moveToPage(pagedReaderIndexRef.current - 1);
                         }}
                         style={({pressed}) => [
                           styles.pageNavButton,
@@ -1812,7 +1825,7 @@ export function App(): React.JSX.Element {
                     .map((passage, index) => (
                       <Text
                         key={`${index}-${passage.slice(0, 24)}`}
-                        maxFontSizeMultiplier={1.35}
+                        maxFontSizeMultiplier={READER_MAX_FONT_SIZE_MULTIPLIER}
                         style={[styles.storyParagraph, {color: readerPalette.text}]}>
                         {indentReaderParagraph(passage)}
                       </Text>

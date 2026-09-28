@@ -513,12 +513,11 @@ export function App(): React.JSX.Element {
     }
 
     try {
-      const result = await session.choose(choiceIndex);
+      const result = session.choose(choiceIndex);
       hasStartedSessionRef.current = true;
       setHasStartedSession(true);
       setReaderRevision(previous => previous + 1);
       setSnapshot(result.snapshot);
-      setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
 
       if (readerMode === 'pages') {
         pageOrdinalRef.current += 1;
@@ -538,6 +537,9 @@ export function App(): React.JSX.Element {
       }
 
       setScreen(result.snapshot.isEnded ? 'ending' : 'reader');
+
+      const persisted = await result.persistence;
+      setNotice(persisted ? null : UI_STRINGS.saveFailed);
     } catch {
       setNotice(UI_STRINGS.storyActionFailed);
     } finally {
@@ -623,9 +625,14 @@ export function App(): React.JSX.Element {
   const isBusy = isLoading || isMutating;
 
   const moveToPage = useCallback(
-    async (requestedPageIndex: number) => {
+    (requestedPageIndex: number) => {
       const session = sessionRef.current;
-      if (!session || !snapshot || pages.length === 0 || !beginMutation()) {
+      if (
+        !session ||
+        !snapshot ||
+        pages.length === 0 ||
+        mutationLockRef.current
+      ) {
         return;
       }
 
@@ -633,14 +640,22 @@ export function App(): React.JSX.Element {
       const previousPageIndex = clampPageIndex(snapshot.pageIndex, pages.length);
 
       if (nextPageIndex === previousPageIndex) {
-        endMutation();
         return;
       }
 
       try {
-        const result = await session.setPage(nextPageIndex);
-        setSnapshot(result.snapshot);
-        setNotice(result.persisted ? null : UI_STRINGS.saveFailed);
+        const pageUpdate = session.setPage(nextPageIndex);
+        setSnapshot(current =>
+          current
+            ? {...current, pageIndex: nextPageIndex, pageAnchor: null}
+            : current,
+        );
+
+        void pageUpdate.persistence.then(persisted => {
+          if (!persisted && sessionRef.current === session) {
+            setNotice(UI_STRINGS.saveFailed);
+          }
+        });
 
         if (readerMode === 'pages') {
           pageOrdinalRef.current = Math.max(
@@ -654,11 +669,9 @@ export function App(): React.JSX.Element {
         }
       } catch {
         setNotice(UI_STRINGS.storyActionFailed);
-      } finally {
-        endMutation();
       }
     },
-    [beginMutation, endMutation, pages.length, readerMode, snapshot],
+    [pages.length, readerMode, snapshot],
   );
 
   const pagePanResponder = useMemo(
