@@ -4,6 +4,7 @@ import {
 } from '../narrative/ReaderPosition';
 
 export const STORY_LINE_HEIGHT = 28;
+export const READER_MAX_FONT_SIZE_MULTIPLIER = 1.35;
 export const PAGE_VERTICAL_PADDING = 12;
 export const CHOICE_GAP = 8;
 export const PARAGRAPH_INDENT = '\u2003\u2003';
@@ -217,6 +218,7 @@ export function commitPaginationMeasurement(
   const measuredPages = paginateMeasuredLines(
     measuredLines,
     request.geometry.height,
+    request.geometry.fontScale,
     request.bannerReserve,
     request.pagesPerBanner,
     request.geometryRevision,
@@ -395,6 +397,7 @@ function normalizeMeasuredLine(line: string): string {
 function paginateMeasuredLines(
   measuredLines: readonly AnchoredMeasuredLine[],
   pageHeight: number,
+  fontScale: number,
   bannerReserve: number,
   pagesPerBanner: number,
   geometryRevision: number,
@@ -404,8 +407,14 @@ function paginateMeasuredLines(
     return EMPTY_PAGES;
   }
 
+  const effectiveLineHeight =
+    STORY_LINE_HEIGHT *
+    Math.min(
+      Math.max(fontScale, 1),
+      READER_MAX_FONT_SIZE_MULTIPLIER,
+    );
   const contentHeight = Math.max(
-    STORY_LINE_HEIGHT,
+    effectiveLineHeight,
     pageHeight - PAGE_VERTICAL_PADDING,
   );
   const chunks: AnchoredMeasuredLine[][] = [];
@@ -425,6 +434,7 @@ function paginateMeasuredLines(
         bannerReserve,
         pagesPerBanner,
         nextPageIndex,
+        effectiveLineHeight,
       );
       chunks.push(...segmentPages);
       nextPageIndex += segmentPages.length;
@@ -466,6 +476,7 @@ function paginateTail(
   bannerReserve: number,
   pagesPerBanner: number,
   pageIndexOffset: number,
+  effectiveLineHeight: number,
 ): AnchoredMeasuredLine[][] {
   if (measuredLines.length === 0) {
     return [];
@@ -481,6 +492,7 @@ function paginateTail(
       pageIndex,
       bannerReserve,
       pagesPerBanner,
+      effectiveLineHeight,
     );
     const take = chooseNarrativePageTake(measuredLines, cursor, capacity);
     pages.push(measuredLines.slice(cursor, cursor + take));
@@ -542,6 +554,7 @@ function getPageLineCapacity(
   pageIndex: number,
   bannerReserve: number,
   pagesPerBanner: number,
+  effectiveLineHeight: number,
 ): number {
   const reservedForBanner = getPageBannerReserve(
     pageIndex,
@@ -552,7 +565,7 @@ function getPageLineCapacity(
     1,
     Math.floor(
       (contentHeight - reservedForBanner) /
-        STORY_LINE_HEIGHT,
+        effectiveLineHeight,
     ),
   );
 }
