@@ -34,7 +34,7 @@ describe('application identity', () => {
     );
   });
 
-  it('uses an Android version code newer than the distributed v0.1.8 build', () => {
+  it('uses an Android version code newer than the previous v0.1.8 build', () => {
     expect(APP_CONFIG.versionCode).toBeGreaterThan(9);
   });
 
