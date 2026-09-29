@@ -1,3 +1,5 @@
+import java.util.Properties
+
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
@@ -13,6 +15,56 @@ def yandexDemoBannerAdUnitId = "demo-banner-yandex"
 def yandexDemoInterstitialAdUnitId = "demo-interstitial-yandex"
 def yandexProductionBannerAdUnitId = "R-M-20131427-1"
 def yandexProductionInterstitialAdUnitId = "R-M-20131427-2"
+
+
+def signingPropertiesFile = rootProject.file("keystore.properties")
+def signingProperties = new Properties()
+
+if (signingPropertiesFile.exists()) {
+    signingPropertiesFile.withReader("UTF-8") { reader ->
+        signingProperties.load(reader)
+    }
+}
+
+def readSigningValue = { String propertyName, String environmentName ->
+    def propertyValue = signingProperties.getProperty(propertyName)
+
+    if (propertyValue != null && !propertyValue.trim().isEmpty()) {
+        return propertyValue
+    }
+
+    def environmentValue = System.getenv(environmentName)
+    if (environmentValue != null && !environmentValue.trim().isEmpty()) {
+        return environmentValue
+    }
+
+    return null
+}
+
+def releaseStoreFilePath = readSigningValue("storeFile", "TEXT_QUEST_SIGNING_STORE_FILE")
+def releaseStorePassword = readSigningValue("storePassword", "TEXT_QUEST_SIGNING_STORE_PASSWORD")
+def releaseKeyAlias = readSigningValue("keyAlias", "TEXT_QUEST_SIGNING_KEY_ALIAS")
+def releaseKeyPassword = readSigningValue("keyPassword", "TEXT_QUEST_SIGNING_KEY_PASSWORD")
+def releaseStoreFile = releaseStoreFilePath == null ? null : rootProject.file(releaseStoreFilePath)
+
+def missingReleaseSigningValues = {
+    def missing = []
+
+    if (releaseStoreFilePath == null) {
+        missing.add("storeFile / TEXT_QUEST_SIGNING_STORE_FILE")
+    }
+    if (releaseStorePassword == null) {
+        missing.add("storePassword / TEXT_QUEST_SIGNING_STORE_PASSWORD")
+    }
+    if (releaseKeyAlias == null) {
+        missing.add("keyAlias / TEXT_QUEST_SIGNING_KEY_ALIAS")
+    }
+    if (releaseKeyPassword == null) {
+        missing.add("keyPassword / TEXT_QUEST_SIGNING_KEY_PASSWORD")
+    }
+
+    return missing
+}
 
 def buildConfigString = { String value -> '"' + value + '"' }
 
@@ -41,6 +93,23 @@ android {
         buildConfig true
     }
 
+    signingConfigs {
+        release {
+            if (releaseStoreFile != null) {
+                storeFile releaseStoreFile
+            }
+            if (releaseStorePassword != null) {
+                storePassword releaseStorePassword
+            }
+            if (releaseKeyAlias != null) {
+                keyAlias releaseKeyAlias
+            }
+            if (releaseKeyPassword != null) {
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
     defaultConfig {
         applicationId "io.github.regstar2.textquestanthology"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -58,11 +127,35 @@ android {
             buildConfigField "String", "YANDEX_INTERSTITIAL_AD_UNIT_ID", buildConfigString(yandexDemoInterstitialAdUnitId)
         }
         release {
+            signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             buildConfigField "String", "YANDEX_AD_DISTRIBUTION", buildConfigString("rustore")
             buildConfigField "String", "YANDEX_BANNER_AD_UNIT_ID", buildConfigString(yandexProductionBannerAdUnitId)
             buildConfigField "String", "YANDEX_INTERSTITIAL_AD_UNIT_ID", buildConfigString(yandexProductionInterstitialAdUnitId)
+        }
+    }
+}
+
+tasks.register("validateReleaseSigningConfig") {
+    group = "verification"
+    description = "Fails when production release signing is incomplete or the configured keystore is missing."
+
+    doLast {
+        def missing = missingReleaseSigningValues()
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "Release signing is not configured. Missing: " +
+                missing.join(", ") +
+                ". Configure android/keystore.properties or TEXT_QUEST_SIGNING_* environment variables. " +
+                "See docs/testing/release-signing.md."
+            )
+        }
+
+        if (!releaseStoreFile.isFile()) {
+            throw new GradleException(
+                "Release signing keystore does not exist: " + releaseStoreFile.absolutePath
+            )
         }
     }
 }
@@ -79,6 +172,7 @@ tasks.register("validateReleaseAdsConfig") {
 
 tasks.configureEach { task ->
     if (task.name == "preReleaseBuild") {
+        task.dependsOn("validateReleaseSigningConfig")
         task.dependsOn("validateReleaseAdsConfig")
     }
 }
