@@ -52,7 +52,7 @@
 - `versionCode = 10`;
 - `applicationId = io.github.regstar2.textquestanthology`.
 
-`versionCode 10` продолжает последовательность после распространённой сборки `v0.1.8` с `versionCode 9`. Для каждого следующего Android artifact код должен увеличиваться, а `applicationId` остаётся неизменным.
+`versionCode 10` продолжает последовательность после предыдущей зафиксированной сборки `v0.1.8` с `versionCode 9`. Для каждого следующего Android artifact код должен увеличиваться, а `applicationId` остаётся неизменным.
 
 Дата зависит от внешней модерации и не продлевает feature-development window. Допускаются только изменения, необходимые для устранения release blockers или замечаний модерации.
 
