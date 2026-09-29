@@ -104,7 +104,7 @@ With a physical Android device connected:
 
 ```powershell
 adb devices
-adb install -r ".\\app\\build\\outputs\\apk\\release\\app-release.apk"
+adb install -r ".\app\build\outputs\apk\release\app-release.apk"
 adb shell dumpsys package io.github.regstar2.textquestanthology |
   Select-String -Pattern "versionCode=|versionName="
 adb shell am force-stop io.github.regstar2.textquestanthology
