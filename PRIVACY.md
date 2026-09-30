@@ -1,7 +1,8 @@
 # Политика конфиденциальности Text Quest Anthology
 
 **Дата вступления в силу:** 30 сентября 2026 года  
-**Применяется к:** Android-версии Text Quest Anthology `v0.4.0`
+**Применяется к:** Android-версии Text Quest Anthology `v0.4.0`  
+**Публичная версия:** https://regstar2.github.io/privacy/text-quest-anthology/
 
 Text Quest Anthology — приложение для чтения интерактивных текстовых историй. Для основного сценария не требуется регистрация, аккаунт или подключение к серверу разработчика.
 
@@ -85,6 +86,5 @@ Text Quest Anthology не имеет:
 ## 7. Контакт
 
 Разработчик: **Regstar2**  
+Email: regstar02@gmail.com  
 GitHub: https://github.com/Regstar2
-
-Для опубликованной версии также могут использоваться контактные данные разработчика, указанные в карточке приложения RuStore.
