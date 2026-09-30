@@ -183,6 +183,7 @@ RuStore и Yandex Mobile Ads не являются частью narrative core. 
 - [`docs/testing/release-signing.md`](docs/testing/release-signing.md) — production-подпись Android, локальная сборка, проверка сертификата и backup ключа.
 - [`PRIVACY.md`](PRIVACY.md) — политика конфиденциальности публичной Android-версии.
 - [`docs/testing/privacy-and-permissions.md`](docs/testing/privacy-and-permissions.md) — проверка privacy disclosure и итогового release manifest.
+- [`docs/store/rustore-listing.md`](docs/store/rustore-listing.md) — готовые данные карточки RuStore, требования к иконке и план release-скриншотов.
 
 ## Дорожная карта
 
