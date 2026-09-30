@@ -52,7 +52,12 @@ npm ci
 npm run verify
 Set-Location android
 .\gradlew.bat assembleRelease bundleRelease
+Set-Location ..
+
+npm run verify:release-privacy
 ```
+
+The final command checks the merged release manifest against the reviewed permission set and the privacy disclosure. Do not submit a build when this check fails.
 
 Expected artifacts:
 
