@@ -32,7 +32,7 @@ npm ci
 npm run verify
 
 Set-Location android
-.\gradlew.bat :app:processReleaseMainManifest
+.\gradlew.bat :app:processReleaseMainManifest -x :app:validateReleaseSigningConfig
 Set-Location ..
 
 npm run verify:release-privacy
