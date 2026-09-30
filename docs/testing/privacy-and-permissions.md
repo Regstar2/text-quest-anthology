@@ -73,15 +73,15 @@ The APK permission list must match the merged-manifest check.
 
 ## Privacy policy publication
 
-The canonical policy text is `PRIVACY.md`.
+The canonical repository policy text is `PRIVACY.md`. The public RuStore URL is:
 
-Before RuStore submission, provide the moderator and users with a public URL or store-supported document containing the same text. A link to a private GitHub repository is not sufficient.
+https://regstar2.github.io/privacy/text-quest-anthology/
 
-After the public copy is created:
+Before RuStore submission:
 
-1. open it without GitHub authentication/private repository access;
-2. compare it with `PRIVACY.md`;
-3. place the public URL in the RuStore application card;
+1. open the public URL without GitHub authentication/private repository access;
+2. compare its disclosures with `PRIVACY.md`;
+3. place that URL in the RuStore application card;
 4. repeat `npm run verify:release-privacy` against the final production build.
 
 ## Current external documentation checked on 2026-09-30
