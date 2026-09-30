@@ -124,7 +124,7 @@ const manifestCandidates = walk(
 
 assert.ok(
   manifestCandidates.length > 0,
-  'Merged release AndroidManifest.xml not found. Run: cd android; .\\gradlew.bat :app:processReleaseMainManifest',
+  'Merged release AndroidManifest.xml not found. Run: cd android; .\\gradlew.bat :app:processReleaseMainManifest -x :app:validateReleaseSigningConfig',
 );
 
 const mergedManifestPath = manifestCandidates[0];
