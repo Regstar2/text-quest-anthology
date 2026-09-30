@@ -32,7 +32,9 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $RepoRoot "dist\rustore\screenshots"
 }
 
+$rawDirectory = Join-Path $OutputDirectory "raw"
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
+New-Item -ItemType Directory -Force -Path $rawDirectory | Out-Null
 
 $devices = @(
     & $AdbPath devices |
@@ -49,7 +51,8 @@ if ($devices.Count -ne 1) {
 }
 
 $remotePath = "/sdcard/$Name.png"
-$localPath = Join-Path $OutputDirectory "$Name.png"
+$rawPath = Join-Path $rawDirectory "$Name.png"
+$storePath = Join-Path $OutputDirectory "$Name.png"
 
 try {
     & $AdbPath shell screencap -p $remotePath
@@ -57,7 +60,7 @@ try {
         throw "adb screencap failed."
     }
 
-    & $AdbPath pull $remotePath $localPath
+    & $AdbPath pull $remotePath $rawPath
     if ($LASTEXITCODE -ne 0) {
         throw "adb pull failed."
     }
@@ -66,33 +69,91 @@ finally {
     & $AdbPath shell rm -f $remotePath | Out-Null
 }
 
-if (-not (Test-Path $localPath)) {
-    throw "Screenshot was not created: $localPath"
+if (-not (Test-Path $rawPath)) {
+    throw "Screenshot was not created: $rawPath"
 }
 
 Add-Type -AssemblyName System.Drawing
-$image = [System.Drawing.Image]::FromFile($localPath)
+
+$source = [System.Drawing.Bitmap]::FromFile($rawPath)
+$target = $null
+$graphics = $null
 
 try {
-    $width = $image.Width
-    $height = $image.Height
+    $width = $source.Width
+    $height = $source.Height
+
+    if ($height -ge $width) {
+        $targetWidth = $width
+        $targetHeight = [int][math]::Round($width * 16 / 9)
+
+        if ($height -lt $targetHeight) {
+            throw "Portrait screenshot is too short to crop to 9:16: $($width)x$($height)."
+        }
+
+        $cropX = 0
+        $cropY = [int][math]::Floor(($height - $targetHeight) / 2)
+    }
+    else {
+        $targetHeight = $height
+        $targetWidth = [int][math]::Round($height * 16 / 9)
+
+        if ($width -lt $targetWidth) {
+            throw "Landscape screenshot is too narrow to crop to 16:9: $($width)x$($height)."
+        }
+
+        $cropX = [int][math]::Floor(($width - $targetWidth) / 2)
+        $cropY = 0
+    }
+
+    $target = [System.Drawing.Bitmap]::new(
+        $targetWidth,
+        $targetHeight,
+        [System.Drawing.Imaging.PixelFormat]::Format24bppRgb
+    )
+
+    $graphics = [System.Drawing.Graphics]::FromImage($target)
+    $graphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
+    $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+    $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+
+    $destination = [System.Drawing.Rectangle]::new(0, 0, $targetWidth, $targetHeight)
+    $sourceRect = [System.Drawing.Rectangle]::new($cropX, $cropY, $targetWidth, $targetHeight)
+    $graphics.DrawImage(
+        $source,
+        $destination,
+        $sourceRect,
+        [System.Drawing.GraphicsUnit]::Pixel
+    )
+
+    $target.Save($storePath, [System.Drawing.Imaging.ImageFormat]::Png)
 }
 finally {
-    $image.Dispose()
+    if ($graphics -ne $null) {
+        $graphics.Dispose()
+    }
+    if ($target -ne $null) {
+        $target.Dispose()
+    }
+    $source.Dispose()
 }
 
-$file = Get-Item $localPath
+$file = Get-Item $storePath
 if ($file.Length -gt 3MB) {
-    Write-Warning "Screenshot is larger than 3 MB and must be reduced before RuStore upload."
+    throw "Prepared phone screenshot is larger than 3 MB: $($file.Length) bytes."
 }
 
-$portraitNineBySixteen = [math]::Abs(($width / $height) - (9 / 16)) -lt 0.01
-$landscapeSixteenByNine = [math]::Abs(($width / $height) - (16 / 9)) -lt 0.01
-
-if (-not $portraitNineBySixteen -and -not $landscapeSixteenByNine) {
-    Write-Warning "Screenshot ratio is $($width)x$($height), not 9:16 or 16:9. RuStore may crop it."
+$check = [System.Drawing.Image]::FromFile($storePath)
+try {
+    $preparedWidth = $check.Width
+    $preparedHeight = $check.Height
+}
+finally {
+    $check.Dispose()
 }
 
-Write-Host "Screenshot saved: $localPath"
-Write-Host "Dimensions: $($width)x$($height); file bytes: $($file.Length)"
-Write-Host "Verify manually that Android system UI, debug overlays and third-party ads are not visible."
+Write-Host "Raw screenshot saved: $rawPath"
+Write-Host "RuStore screenshot saved: $storePath"
+Write-Host "Prepared dimensions: $($preparedWidth)x$($preparedHeight); file bytes: $($file.Length)"
+Write-Host "Crop is centered. Verify manually that important UI, Android system UI, debug overlays and third-party ads are not visible."
