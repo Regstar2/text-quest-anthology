@@ -90,14 +90,36 @@ The SHA-256 certificate fingerprint printed for the APK must match the certifica
 
 ## Install and update check
 
+For the public MVP, the expected release identity is:
+
+```text
+applicationId = io.github.regstar2.textquestanthology
+versionName = 0.4.0
+versionCode = 10
+```
+
+To test the real upgrade path, first install or keep the previous production-signed build on the device. Do not uninstall it before the check: uninstalling would turn the operation into a clean install instead of an update.
+
 With a physical Android device connected:
 
 ```powershell
 adb devices
+
+# Record the currently installed production build before the update.
+adb shell dumpsys package io.github.regstar2.textquestanthology |
+  Select-String -Pattern "versionCode=|versionName="
+
 adb install -r ".\app\build\outputs\apk\release\app-release.apk"
+
+# Verify the installed metadata after the update.
+adb shell dumpsys package io.github.regstar2.textquestanthology |
+  Select-String -Pattern "versionCode=|versionName="
+
 adb shell am force-stop io.github.regstar2.textquestanthology
 adb shell am start -n io.github.regstar2.textquestanthology/.MainActivity
 ```
+
+Acceptance for `v0.4.0`: the previously installed build has a `versionCode` lower than `10`, `adb install -r` returns `Success`, package metadata after the update reports `versionCode=10` and `versionName=0.4.0`, and the application starts without changing `applicationId`. The previous and new APK must be signed with the same production key.
 
 Before store submission, repeat the build with the same keystore and confirm that Android accepts an update over the previous production-signed build. Do not replace the production key between versions.
 
