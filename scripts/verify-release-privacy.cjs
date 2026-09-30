@@ -100,6 +100,7 @@ for (const requiredPolicyText of [
   'cloud sync',
   'android:allowBackup="false"',
   'https://yandex.com/legal/international_ads_privacy_policy/en/',
+  'https://regstar2.github.io/privacy/text-quest-anthology/',
 ]) {
   assert.ok(
     privacyPolicy.includes(requiredPolicyText),
