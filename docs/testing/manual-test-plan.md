@@ -297,22 +297,36 @@ Development проверяется на официальных demo/test IDs. Pr
 
 ### T-080 Permissions sanity
 
-Проверить manifest итоговой release сборки.
+Build the merged release manifest and run the repository gate:
 
-Ожидание:
+```powershell
+Set-Location android
+.\gradlew.bat :app:processReleaseMainManifest
+Set-Location ..
+npm run verify:release-privacy
+```
 
-- нет permissions, не объясняемых React Native/runtime/Yandex Ads/release requirements;
-- приложение не запрашивает опасное permission без пользовательской необходимости.
+Expected:
+
+- the checker prints the complete merged release permission list;
+- there are no unreviewed permissions;
+- there are no location, contacts, SMS/calls, camera, microphone, external-storage/media or other blocked sensitive permissions;
+- `INTERNET` and the Yandex-provided `AD_ID` disclosure match the production advertising configuration.
+
+After `assembleRelease`, independently inspect the APK permission list as described in `docs/testing/privacy-and-permissions.md`.
 
 ### T-081 Privacy text
 
-Сверить фактическое поведение приложения и privacy policy.
+Compare the final production behavior with `PRIVACY.md` and its public RuStore copy.
 
-Ожидание:
+Expected:
 
-- local saves описаны честно;
-- Yandex Mobile Ads/advertising identifiers раскрыты по применимости;
-- нет заявления «приложение ничего не передаёт», если SDK фактически использует сеть/идентификаторы.
+- local `SharedPreferences` saves and reader preferences are described honestly;
+- absence of accounts, backend and cloud sync is stated;
+- Yandex Mobile Ads/network requests/advertising identifiers are disclosed;
+- the text does not claim that the application sends no data at all;
+- the public policy is reachable without private GitHub access;
+- the policy is rechecked after any advertising SDK, permission or storage change.
 
 ## 10. Release signing / update
 
