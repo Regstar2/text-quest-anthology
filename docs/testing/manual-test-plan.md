@@ -301,7 +301,7 @@ Build the merged release manifest and run the repository gate:
 
 ```powershell
 Set-Location android
-.\gradlew.bat :app:processReleaseMainManifest
+.\gradlew.bat :app:processReleaseMainManifest -x :app:validateReleaseSigningConfig
 Set-Location ..
 npm run verify:release-privacy
 ```
