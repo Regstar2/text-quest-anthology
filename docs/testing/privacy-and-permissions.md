@@ -38,7 +38,7 @@ Set-Location ..
 npm run verify:release-privacy
 ```
 
-`verify:release-privacy` finds the newest merged release `AndroidManifest.xml`, prints every requested permission and fails when:
+The manifest-only command deliberately skips `validateReleaseSigningConfig`: signing is irrelevant to manifest merging and is still mandatory for `assembleRelease`/`bundleRelease`. `verify:release-privacy` finds the newest merged release `AndroidManifest.xml`, prints every requested permission and fails when:
 
 - the release manifest does not contain `android.permission.INTERNET`;
 - Yandex Mobile Ads `8.3.0` is configured but `com.google.android.gms.permission.AD_ID` is absent;
