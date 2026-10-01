@@ -4,7 +4,7 @@
 // СЦЕНА:
 // - ID / файл: 01_06_find-house-with-intact-windows.ink
 // - Knot / stitch: s_house_seen
-// - Версия production prose: v0.2.1; текущий этап — только AUTHORING BRIEF. Существующий prose ниже оставлен без изменений и не считается эталоном нового прохода до отдельного этапа написания.
+// - Версия production prose: v0.2.1; художественный текст ниже является текущей production-реализацией и должен соответствовать этому brief после финального редакторского прохода.
 // - Источники: [FACT] stories/zavalinka/design/zavalinka-original.md — подход к дому с целыми окнами и его внешний вид; [FACT] Canvas-узел s_house_seen и рёбра d1/a_blood/a_open/a_broken -> s_house_seen -> d2; [FACT] Issue #34; [FACT] SCENE_AUTHORING_TEMPLATE.md; [FACT] state.ink, story.ink и scenes/01_settlement-and-shelter/main.ink; [FACT] реальные входы из 01_02, 01_03, 01_04 и 01_05; [FACT] реальный выход в 01_07; [FACT] релевантная внешняя география из 01_08 и вход через террасу из 01_09; [FACT] уже отредактированные production-сцены 01_01–01_03 для continuity текущего прохода.
 // - Достоверность: FACT / INFERENCE / UNKNOWN ниже отделяют подтверждённые сведения от авторского планирования. UNKNOWN не заменять правдоподобной выдумкой.
 //
