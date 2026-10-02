@@ -12,6 +12,10 @@ concurrency:
   group: issue-57-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -35,8 +39,10 @@ jobs:
       - name: Install Android SDK 37
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-37" "build-tools;37.0.0" "ndk;27.1.12297006"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-37" "build-tools;37.0.0" "ndk;27.1.12297006"
 
       - name: Install dependencies
         run: npm ci
