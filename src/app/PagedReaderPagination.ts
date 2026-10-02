@@ -518,44 +518,65 @@ function chooseNarrativePageTake(
   capacity: number,
 ): number {
   const remaining = lines.length - cursor;
-  if (remaining <= capacity) {
-    return remaining;
+  const take = Math.min(remaining, capacity);
+  if (take >= remaining || take <= 1) {
+    return take;
   }
 
-  const minimumPreferredTake = Math.max(2, Math.floor(capacity * 0.55));
+  const splitIndex = cursor + take;
+  const previousPassage = lines[splitIndex - 1].anchor.passageIndex;
+  const nextPassage = lines[splitIndex].anchor.passageIndex;
 
-  for (let take = capacity; take >= minimumPreferredTake; take -= 1) {
-    if (isParagraphBoundary(lines, cursor + take)) {
-      return take;
-    }
+  if (previousPassage !== nextPassage) {
+    return take;
   }
 
-  for (let take = capacity; take >= minimumPreferredTake; take -= 1) {
-    if (isSentenceBoundary(lines[cursor + take - 1].text)) {
-      return take;
-    }
-  }
-
-  return capacity;
-}
-
-function isParagraphBoundary(
-  lines: readonly AnchoredMeasuredLine[],
-  nextLineIndex: number,
-): boolean {
-  if (nextLineIndex <= 0 || nextLineIndex >= lines.length) {
-    return true;
-  }
-
-  return (
-    lines[nextLineIndex - 1].anchor.passageIndex !==
-    lines[nextLineIndex].anchor.passageIndex
+  const linesBeforeSplit = countTrailingPassageLines(
+    lines,
+    cursor,
+    splitIndex,
+    previousPassage,
   );
+  const linesAfterSplit = countLeadingPassageLines(
+    lines,
+    splitIndex,
+    nextPassage,
+  );
+
+  return linesBeforeSplit === 1 || linesAfterSplit === 1
+    ? Math.max(1, take - 1)
+    : take;
 }
 
-function isSentenceBoundary(line: string): boolean {
-  const visible = line.split(PARAGRAPH_BREAK_MARKER).join('').trim();
-  return /[.!?…](?:["»”')]+)?$/.test(visible);
+function countTrailingPassageLines(
+  lines: readonly AnchoredMeasuredLine[],
+  cursor: number,
+  splitIndex: number,
+  passageIndex: number,
+): number {
+  let count = 0;
+  for (let index = splitIndex - 1; index >= cursor; index -= 1) {
+    if (lines[index].anchor.passageIndex !== passageIndex) {
+      break;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+function countLeadingPassageLines(
+  lines: readonly AnchoredMeasuredLine[],
+  splitIndex: number,
+  passageIndex: number,
+): number {
+  let count = 0;
+  for (let index = splitIndex; index < lines.length; index += 1) {
+    if (lines[index].anchor.passageIndex !== passageIndex) {
+      break;
+    }
+    count += 1;
+  }
+  return count;
 }
 
 function getPageLineCapacity(
