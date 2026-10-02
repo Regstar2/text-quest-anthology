@@ -42,7 +42,13 @@ jobs:
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-37" "build-tools;37.0.0" "ndk;27.1.12297006"
+          "$SDKMANAGER" --channel=3             "platform-tools"             "platforms;android-37.0"             "build-tools;37.0.0"             "ndk;27.1.12297006"
+
+          # Android 17 is currently published by sdkmanager as android-37.0,
+          # while the current Gradle configuration resolves compileSdk 37 as android-37.
+          if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s "$ANDROID_HOME/platforms/android-37.0" "$ANDROID_HOME/platforms/android-37"
+          fi
 
       - name: Install dependencies
         run: npm ci
