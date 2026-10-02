@@ -2,7 +2,7 @@
 
 Android-приложение-антология коротких независимых текстовых квестов. Первая история — хоррор/выживание «Завалинка»; решения игрока меняют доступные события и приводят к нескольким терминальным концовкам.
 
-[Документация](#документация) · [Дорожная карта](#дорожная-карта) · [Обратная связь](../../issues)
+[Документация](#документация) · [Конфиденциальность](PRIVACY.md) · [Дорожная карта](#дорожная-карта) · [Обратная связь](../../issues)
 
 ---
 
@@ -180,6 +180,10 @@ RuStore и Yandex Mobile Ads не являются частью narrative core. 
 - [`docs/architecture/architecture.md`](docs/architecture/architecture.md) — структура приложения и будущих story packages.
 - [`docs/versions/versions-index.md`](docs/versions/versions-index.md) — назначение версий до первого релиза.
 - [`docs/testing/manual-test-plan.md`](docs/testing/manual-test-plan.md) — минимальный release test plan.
+- [`docs/testing/release-signing.md`](docs/testing/release-signing.md) — production-подпись Android, локальная сборка, проверка сертификата и backup ключа.
+- [`PRIVACY.md`](PRIVACY.md) — политика конфиденциальности публичной Android-версии.
+- [`docs/testing/privacy-and-permissions.md`](docs/testing/privacy-and-permissions.md) — проверка privacy disclosure и итогового release manifest.
+- [`docs/store/rustore-listing.md`](docs/store/rustore-listing.md) — готовые данные карточки RuStore, требования к иконке и план release-скриншотов.
 
 ## Дорожная карта
 

@@ -20,6 +20,13 @@ class NativeBannerModule(
 
     override fun getName(): String = "NativeBannerController"
 
+    override fun getConstants(): MutableMap<String, Any> =
+        mutableMapOf(
+            "distribution" to BuildConfig.YANDEX_AD_DISTRIBUTION,
+            "bannerAdUnitId" to BuildConfig.YANDEX_BANNER_AD_UNIT_ID,
+            "interstitialAdUnitId" to BuildConfig.YANDEX_INTERSTITIAL_AD_UNIT_ID,
+        )
+
     @ReactMethod
     fun prepare(adUnitId: String) {
         MainActivity.withActiveActivity { activity ->
