@@ -235,7 +235,7 @@ describe('deterministic paged reader model', () => {
     expect(appended.pages[2].bannerReserve).toBe(56);
   });
 
-  test('prefers paragraph boundaries instead of splitting a short paragraph across pages', () => {
+  test('avoids one-line paragraph fragments at a page boundary', () => {
     let state = updatePagedReaderGeometry(createPagedReaderState(), {
       width: 360,
       height: 124,
@@ -269,6 +269,41 @@ describe('deterministic paged reader model', () => {
       '  Порыв ветра ударил дождём сбоку. Лера отвернулась и натянула капюшон ниже.',
       '  Следующий абзац.',
     ]);
+  });
+
+  test('does not backtrack several lines just to reach an earlier paragraph boundary', () => {
+    let state = updatePagedReaderGeometry(createPagedReaderState(), {
+      width: 360,
+      height: 208,
+      fontScale: 1,
+    });
+    const passages = [
+      'Первый короткий абзац.',
+      'Второй абзац занимает две строки.',
+      'Третий длинный абзац занимает пять физических строк и должен заполнять страницу.',
+      'Следующий абзац.',
+    ];
+    const request = planPaginationMeasurement(state, passages, 0);
+    if (!request) {
+      throw new Error('Expected pagination request.');
+    }
+
+    const rawLines = [
+      '  Первый короткий абзац.\n',
+      '  Второй абзац занимает',
+      'две строки.\n',
+      '  Третий длинный абзац',
+      'занимает вторую строку',
+      'занимает третью строку',
+      'занимает четвёртую строку',
+      'занимает пятую строку.\n',
+      '  Следующий абзац.\n',
+    ];
+    state = commitPaginationMeasurement(state, request, rawLines, 28);
+
+    expect(state.pages[0].lines).toHaveLength(6);
+    expect(state.pages[0].lines.at(-1)).toBe('занимает третью строку');
+    expect(state.pages[1].lines[0]).toBe('занимает четвёртую строку');
   });
 
   test('choice boundaries do not reserve or redistribute narrative page space', () => {

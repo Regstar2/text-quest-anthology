@@ -9,7 +9,7 @@ export const STORY_MANIFEST = [
     metadata: {
       id: 'zavalinka',
       schemaVersion: 1,
-      contentVersion: 5,
+      contentVersion: 6,
       title: 'Завалинка',
       description: 'Ночлег в пустом посёлке превращается в борьбу за чердак, где ранние решения определяют доступные пути.',
       cover: 'assets/cover.webp',

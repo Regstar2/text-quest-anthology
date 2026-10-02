@@ -636,7 +636,6 @@ export function App(): React.JSX.Element {
       readerMode === 'pages',
   });
   const {
-    currentPage,
     pageTransitionReady,
     canOpenInteraction: canOpenPagedInteraction,
     interactionTransitionPending: pagedInteractionTransitionPending,
