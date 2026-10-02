@@ -123,7 +123,7 @@ export function PagedReaderView({
                   key={`page-${behavior.currentPage.key}`}
                   maxFontSizeMultiplier={READER_MAX_FONT_SIZE_MULTIPLIER}
                   style={[styles.storyParagraph, {color: palette.text}]}>
-                  {behavior.currentPage.paragraphs.join('\n')}
+                  {behavior.currentPage.lines.join('\n')}
                 </Text>
               ) : null}
 
