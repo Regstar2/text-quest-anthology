@@ -518,39 +518,44 @@ function chooseNarrativePageTake(
   capacity: number,
 ): number {
   const remaining = lines.length - cursor;
-  const take = Math.min(remaining, capacity);
-  if (take >= remaining || take <= 1) {
-    return take;
+  if (remaining <= capacity) {
+    return remaining;
   }
 
-  const splitIndex = cursor + take;
-  const previousPassage = lines[splitIndex - 1].anchor.passageIndex;
-  const nextPassage = lines[splitIndex].anchor.passageIndex;
-  if (previousPassage !== nextPassage) {
-    return take;
+  const minimumPreferredTake = Math.max(2, Math.floor(capacity * 0.55));
+
+  for (let take = capacity; take >= minimumPreferredTake; take -= 1) {
+    if (isParagraphBoundary(lines, cursor + take)) {
+      return take;
+    }
   }
 
-  const continuationLines = countLeadingPassageLines(
-    lines,
-    splitIndex,
-    nextPassage,
-  );
-  return continuationLines === 1 ? Math.max(1, take - 1) : take;
+  for (let take = capacity; take >= minimumPreferredTake; take -= 1) {
+    if (isSentenceBoundary(lines[cursor + take - 1].text)) {
+      return take;
+    }
+  }
+
+  return capacity;
 }
 
-function countLeadingPassageLines(
+function isParagraphBoundary(
   lines: readonly AnchoredMeasuredLine[],
-  splitIndex: number,
-  passageIndex: number,
-): number {
-  let count = 0;
-  for (let index = splitIndex; index < lines.length; index += 1) {
-    if (lines[index].anchor.passageIndex !== passageIndex) {
-      break;
-    }
-    count += 1;
+  nextLineIndex: number,
+): boolean {
+  if (nextLineIndex <= 0 || nextLineIndex >= lines.length) {
+    return true;
   }
-  return count;
+
+  return (
+    lines[nextLineIndex - 1].anchor.passageIndex !==
+    lines[nextLineIndex].anchor.passageIndex
+  );
+}
+
+function isSentenceBoundary(line: string): boolean {
+  const visible = line.split(PARAGRAPH_BREAK_MARKER).join('').trim();
+  return /[.!?…](?:["»”')]+)?$/.test(visible);
 }
 
 function getPageLineCapacity(
