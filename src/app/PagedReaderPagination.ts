@@ -518,44 +518,7 @@ function chooseNarrativePageTake(
   capacity: number,
 ): number {
   const remaining = lines.length - cursor;
-  if (remaining <= capacity) {
-    return remaining;
-  }
-
-  const minimumPreferredTake = Math.max(2, Math.floor(capacity * 0.55));
-
-  for (let take = capacity; take >= minimumPreferredTake; take -= 1) {
-    if (isParagraphBoundary(lines, cursor + take)) {
-      return take;
-    }
-  }
-
-  for (let take = capacity; take >= minimumPreferredTake; take -= 1) {
-    if (isSentenceBoundary(lines[cursor + take - 1].text)) {
-      return take;
-    }
-  }
-
-  return capacity;
-}
-
-function isParagraphBoundary(
-  lines: readonly AnchoredMeasuredLine[],
-  nextLineIndex: number,
-): boolean {
-  if (nextLineIndex <= 0 || nextLineIndex >= lines.length) {
-    return true;
-  }
-
-  return (
-    lines[nextLineIndex - 1].anchor.passageIndex !==
-    lines[nextLineIndex].anchor.passageIndex
-  );
-}
-
-function isSentenceBoundary(line: string): boolean {
-  const visible = line.split(PARAGRAPH_BREAK_MARKER).join('').trim();
-  return /[.!?…](?:["»”')]+)?$/.test(visible);
+  return Math.min(remaining, capacity);
 }
 
 function getPageLineCapacity(
