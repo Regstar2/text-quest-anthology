@@ -18,7 +18,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,8 +29,30 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 37
+        shell: bash
+        run: sdkmanager "platforms;android-37" "build-tools;37.0.0"
+
       - name: Install dependencies
         run: npm ci
 
       - name: Verify project
         run: npm run verify
+
+      - name: Verify release Android configuration
+        shell: bash
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :app:validateReleaseAdsConfig :app:processReleaseMainManifest :app:compileReleaseKotlin -x :app:validateReleaseSigningConfig
+          cd ..
+          npm run verify:release-privacy
