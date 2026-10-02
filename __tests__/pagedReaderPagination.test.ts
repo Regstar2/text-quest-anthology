@@ -235,7 +235,7 @@ describe('deterministic paged reader model', () => {
     expect(appended.pages[2].bannerReserve).toBe(56);
   });
 
-  test('avoids leaving a one-line continuation while otherwise using measured capacity', () => {
+  test('prefers paragraph boundaries instead of splitting a short paragraph across pages', () => {
     let state = updatePagedReaderGeometry(createPagedReaderState(), {
       width: 360,
       height: 124,
@@ -261,49 +261,13 @@ describe('deterministic paged reader model', () => {
     ];
     state = commitPaginationMeasurement(state, request, rawLines);
 
-    expect(state.pages[0].lines).toEqual([
+    expect(state.pages[0].paragraphs).toEqual([
       '  Первая строка.',
       '  Вторая строка.',
     ]);
-    expect(state.pages[1].lines).toEqual([
-      '  Порыв ветра ударил дождём сбоку.',
-      'Лера отвернулась и натянула капюшон ниже.',
+    expect(state.pages[1].paragraphs).toEqual([
+      '  Порыв ветра ударил дождём сбоку. Лера отвернулась и натянула капюшон ниже.',
       '  Следующий абзац.',
-    ]);
-  });
-
-  test('moves one extra line when a split would orphan the final line of a paragraph', () => {
-    let state = updatePagedReaderGeometry(createPagedReaderState(), {
-      width: 360,
-      height: 124,
-      fontScale: 1,
-    });
-    const passages = [
-      'Длинный абзац из четырёх физических строк.',
-      'Следующий абзац.',
-    ];
-    const request = planPaginationMeasurement(state, passages, 0);
-    if (!request) {
-      throw new Error('Expected pagination request.');
-    }
-
-    state = commitPaginationMeasurement(
-      state,
-      request,
-      [
-        '  Первая строка длинного абзаца',
-        'вторая строка длинного абзаца',
-        'третья строка длинного абзаца',
-        'четвёртая строка длинного абзаца.\n',
-        '  Следующий абзац.\n',
-      ],
-      28,
-    );
-
-    expect(state.pages[0].lines).toHaveLength(2);
-    expect(state.pages[1].lines.slice(0, 2)).toEqual([
-      'третья строка длинного абзаца',
-      'четвёртая строка длинного абзаца.',
     ]);
   });
 
