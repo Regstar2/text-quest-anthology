@@ -140,15 +140,15 @@ describe('PagedReaderView component contract', () => {
     const renderedText = textContent(tree);
 
     expect(renderedText).toContain(
-      behavior.currentPage?.lines.join('\n') ?? '',
+      behavior.currentPage?.paragraphs.join('\n') ?? '',
     );
     expect(renderedText).toContain(String(behavior.displayedPageNumber));
     expect(renderedText).not.toContain('Выбор');
   });
 
-  test('renders native measured line breaks instead of reflowing a page fragment', () => {
+  test('does not expose native measurement wraps as hard line breaks', () => {
     const source = [
-      'Первый длинный абзац продолжается на следующей строке и не должен заново переноситься.',
+      'Первый длинный абзац продолжается на следующей строке и не должен сохранять служебные переносы.',
     ];
     let state = updatePagedReaderGeometry(createPagedReaderState(), {
       width: 360,
@@ -166,7 +166,7 @@ describe('PagedReaderView component contract', () => {
       [
         '  Первый длинный абзац продолжается',
         'на следующей строке и не должен',
-        'заново переноситься.\n',
+        'сохранять служебные переносы.\n',
       ],
       28,
     );
@@ -174,12 +174,12 @@ describe('PagedReaderView component contract', () => {
     const renderedText = textContent(renderView(behavior));
 
     expect(renderedText).toContain(
-      '  Первый длинный абзац продолжается\n' +
-        'на следующей строке и не должен\n' +
-        'заново переноситься.',
+      '  Первый длинный абзац продолжается на следующей строке и не должен сохранять служебные переносы.',
     );
     expect(renderedText).not.toContain(
-      '  Первый длинный абзац продолжается на следующей строке и не должен заново переноситься.',
+      '  Первый длинный абзац продолжается\n' +
+        'на следующей строке и не должен\n' +
+        'сохранять служебные переносы.',
     );
   });
 
