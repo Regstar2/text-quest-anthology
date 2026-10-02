@@ -140,10 +140,47 @@ describe('PagedReaderView component contract', () => {
     const renderedText = textContent(tree);
 
     expect(renderedText).toContain(
-      behavior.currentPage?.paragraphs.join('\n') ?? '',
+      behavior.currentPage?.lines.join('\n') ?? '',
     );
     expect(renderedText).toContain(String(behavior.displayedPageNumber));
     expect(renderedText).not.toContain('Выбор');
+  });
+
+  test('renders native measured line breaks instead of reflowing a page fragment', () => {
+    const source = [
+      'Первый длинный абзац продолжается на следующей строке и не должен заново переноситься.',
+    ];
+    let state = updatePagedReaderGeometry(createPagedReaderState(), {
+      width: 360,
+      height: 180,
+      fontScale: 1,
+    });
+    const request = planPaginationMeasurement(state, source);
+    if (!request) {
+      throw new Error('Expected pagination request.');
+    }
+
+    state = commitPaginationMeasurement(
+      state,
+      request,
+      [
+        '  Первый длинный абзац продолжается',
+        'на следующей строке и не должен',
+        'заново переноситься.\n',
+      ],
+      28,
+    );
+    const behavior = createBehavior(state);
+    const renderedText = textContent(renderView(behavior));
+
+    expect(renderedText).toContain(
+      '  Первый длинный абзац продолжается\n' +
+        'на следующей строке и не должен\n' +
+        'заново переноситься.',
+    );
+    expect(renderedText).not.toContain(
+      '  Первый длинный абзац продолжается на следующей строке и не должен заново переноситься.',
+    );
   });
 
   test('interaction screen can contain multiline choices without rendering page text or number', () => {
