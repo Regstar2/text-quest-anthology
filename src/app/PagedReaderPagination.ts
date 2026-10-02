@@ -526,15 +526,8 @@ function chooseNarrativePageTake(
   const splitIndex = cursor + take;
   const previousPassage = lines[splitIndex - 1].anchor.passageIndex;
   const nextPassage = lines[splitIndex].anchor.passageIndex;
-
   if (previousPassage !== nextPassage) {
-    const currentFragmentLines = countTrailingPassageLines(
-      lines,
-      cursor,
-      splitIndex,
-      previousPassage,
-    );
-    return currentFragmentLines === 1 ? Math.max(1, take - 1) : take;
+    return take;
   }
 
   const continuationLines = countLeadingPassageLines(
@@ -543,22 +536,6 @@ function chooseNarrativePageTake(
     nextPassage,
   );
   return continuationLines === 1 ? Math.max(1, take - 1) : take;
-}
-
-function countTrailingPassageLines(
-  lines: readonly AnchoredMeasuredLine[],
-  cursor: number,
-  splitIndex: number,
-  passageIndex: number,
-): number {
-  let count = 0;
-  for (let index = splitIndex - 1; index >= cursor; index -= 1) {
-    if (lines[index].anchor.passageIndex !== passageIndex) {
-      break;
-    }
-    count += 1;
-  }
-  return count;
 }
 
 function countLeadingPassageLines(
