@@ -235,7 +235,7 @@ describe('deterministic paged reader model', () => {
     expect(appended.pages[2].bannerReserve).toBe(56);
   });
 
-  test('prefers paragraph boundaries instead of splitting a short paragraph across pages', () => {
+  test('fills each non-terminal page to measured line capacity even across paragraph boundaries', () => {
     let state = updatePagedReaderGeometry(createPagedReaderState(), {
       width: 360,
       height: 124,
@@ -261,12 +261,14 @@ describe('deterministic paged reader model', () => {
     ];
     state = commitPaginationMeasurement(state, request, rawLines);
 
+    expect(state.pages[0].lines).toHaveLength(3);
     expect(state.pages[0].paragraphs).toEqual([
       '  Первая строка.',
       '  Вторая строка.',
+      '  Порыв ветра ударил дождём сбоку.',
     ]);
     expect(state.pages[1].paragraphs).toEqual([
-      '  Порыв ветра ударил дождём сбоку. Лера отвернулась и натянула капюшон ниже.',
+      'Лера отвернулась и натянула капюшон ниже.',
       '  Следующий абзац.',
     ]);
   });
