@@ -518,7 +518,62 @@ function chooseNarrativePageTake(
   capacity: number,
 ): number {
   const remaining = lines.length - cursor;
-  return Math.min(remaining, capacity);
+  const take = Math.min(remaining, capacity);
+  if (take >= remaining || take <= 1) {
+    return take;
+  }
+
+  const splitIndex = cursor + take;
+  const previousPassage = lines[splitIndex - 1].anchor.passageIndex;
+  const nextPassage = lines[splitIndex].anchor.passageIndex;
+
+  if (previousPassage !== nextPassage) {
+    const currentFragmentLines = countTrailingPassageLines(
+      lines,
+      cursor,
+      splitIndex,
+      previousPassage,
+    );
+    return currentFragmentLines === 1 ? Math.max(1, take - 1) : take;
+  }
+
+  const continuationLines = countLeadingPassageLines(
+    lines,
+    splitIndex,
+    nextPassage,
+  );
+  return continuationLines === 1 ? Math.max(1, take - 1) : take;
+}
+
+function countTrailingPassageLines(
+  lines: readonly AnchoredMeasuredLine[],
+  cursor: number,
+  splitIndex: number,
+  passageIndex: number,
+): number {
+  let count = 0;
+  for (let index = splitIndex - 1; index >= cursor; index -= 1) {
+    if (lines[index].anchor.passageIndex !== passageIndex) {
+      break;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+function countLeadingPassageLines(
+  lines: readonly AnchoredMeasuredLine[],
+  splitIndex: number,
+  passageIndex: number,
+): number {
+  let count = 0;
+  for (let index = splitIndex; index < lines.length; index += 1) {
+    if (lines[index].anchor.passageIndex !== passageIndex) {
+      break;
+    }
+    count += 1;
+  }
+  return count;
 }
 
 function getPageLineCapacity(
