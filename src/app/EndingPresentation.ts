@@ -72,7 +72,7 @@ export function formatEndingDisplay(
 }
 
 function parseInternalEndingNumber(endingId: string): number | null {
-  const match = /^e(\\d+)(?:[_-]|$)/i.exec(endingId);
+  const match = /^e(\d+)(?:[_-]|$)/i.exec(endingId);
   if (!match) {
     return null;
   }
@@ -82,7 +82,7 @@ function parseInternalEndingNumber(endingId: string): number | null {
 }
 
 function formatEndingName(endingId: string): string {
-  const match = /^e\\d+(?:[_-](.+))?$/i.exec(endingId);
+  const match = /^e\d+(?:[_-](.+))?$/i.exec(endingId);
   const rawName = match?.[1] ?? '';
   const words = rawName
     .split(/[_-]+/g)
