@@ -1,10 +1,5 @@
 import React from 'react';
-import {
-  StyleSheet,
-  Text,
-  type StyleProp,
-  type TextStyle,
-} from 'react-native';
+import {StyleSheet, Text, type TextStyle} from 'react-native';
 import {
   derivePagedReaderBehavior,
   type PagedReaderBehavior,
@@ -245,39 +240,31 @@ describe('PagedReaderView component contract', () => {
     }
 
     const tree = renderView(behavior, {paginationRequest: request});
-    let measurementText: React.ReactElement<Record<string, unknown>> | null =
-      null;
-    let visibleText: React.ReactElement<Record<string, unknown>> | null = null;
+    const textStyles: TextStyle[] = [];
 
     visit(tree, element => {
-      if (
-        !measurementText &&
-        element.type === Text &&
-        typeof element.props.onTextLayout === 'function'
-      ) {
-        measurementText = element;
+      if (element.type !== Text) {
+        return;
       }
 
-      if (
-        !visibleText &&
-        element.type === Text &&
+      const isMeasurementText =
+        typeof element.props.onTextLayout === 'function';
+      const isVisibleStoryText =
         textContent(element.props.children as React.ReactNode) ===
-          (behavior.currentPage?.paragraphs.join('\n') ?? '')
-      ) {
-        visibleText = element;
+        (behavior.currentPage?.paragraphs.join('\n') ?? '');
+
+      if (!isMeasurementText && !isVisibleStoryText) {
+        return;
+      }
+
+      const flattened = StyleSheet.flatten(element.props.style as TextStyle);
+      if (flattened) {
+        textStyles.push(flattened);
       }
     });
 
-    if (!measurementText || !visibleText) {
-      throw new Error('Expected measurement and visible reader Text nodes.');
-    }
-
-    const measurementStyle = StyleSheet.flatten(
-      measurementText.props.style as StyleProp<TextStyle>,
-    );
-    const visibleStyle = StyleSheet.flatten(
-      visibleText.props.style as StyleProp<TextStyle>,
-    );
+    expect(textStyles).toHaveLength(2);
+    const [measurementStyle, visibleStyle] = textStyles;
 
     expect(READER_TEXT_HORIZONTAL_INSET).toBeGreaterThan(0);
     expect(measurementStyle.paddingHorizontal).toBe(
