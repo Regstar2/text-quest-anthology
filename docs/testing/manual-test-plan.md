@@ -348,7 +348,8 @@ Expected:
 
 - Android принимает update;
 - package identity сохраняется;
-- существующий save не теряется без причины.
+- совместимый save сохраняется после update;
+- если save несовместим по `storyContentVersion`/контентному контракту, приложение выполняет явный safe reset/fallback по T-044 без crash loop, повреждения данных или ложного resume; такой ожидаемый reset не считается необоснованной потерей save.
 
 ## 11. Store readiness
 
