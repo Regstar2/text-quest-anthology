@@ -49,6 +49,10 @@ import {
   type StoryCatalogItem,
 } from './StoryCatalog';
 import {
+  formatEndingDisplay,
+  listStoryEndingIds,
+} from './EndingPresentation';
+import {
   clampPageIndex,
   pageAfterHorizontalSwipe,
   shouldHandleHorizontalPageSwipe,
@@ -120,6 +124,17 @@ export function App(): React.JSX.Element {
   const [catalogItems, setCatalogItems] = useState<readonly StoryCatalogItem[]>([]);
   const [unlockedEndings, setUnlockedEndings] =
     useState<readonly UnlockedEnding[]>([]);
+  const activeEndingIds = useMemo(() => {
+    if (!activeStory) {
+      return [];
+    }
+
+    try {
+      return listStoryEndingIds(storyLoader.load(activeStory.id).compiledStory);
+    } catch {
+      return [];
+    }
+  }, [activeStory]);
   const [readerPreferences, setReaderPreferences] =
     useState<ReaderPreferences>(DEFAULT_READER_PREFERENCES);
   const [menuView, setMenuView] = useState<MenuView>(null);
@@ -957,7 +972,7 @@ export function App(): React.JSX.Element {
     return (
       <View style={styles.endingDockContent}>
         <Text style={[styles.endingLabel, {color: readerPalette.muted}]}>
-          {formatEndingDisplay(snapshot.endingId)}
+          {formatEndingDisplay(snapshot.endingId, activeEndingIds)}
         </Text>
         <View style={styles.endingActions}>
           <Pressable
@@ -1594,7 +1609,7 @@ export function App(): React.JSX.Element {
                     },
                   ]}>
                   <Text style={[styles.endingCardTitle, {color: appColors.text}]}>
-                    {formatEndingDisplay(ending.id)}
+                    {formatEndingDisplay(ending.id, activeEndingIds)}
                   </Text>
                   <Text
                     maxFontSizeMultiplier={READER_MAX_FONT_SIZE_MULTIPLIER}
@@ -1772,30 +1787,6 @@ function formatEndingProgress(item: StoryCatalogItem): string {
   return item.totalEndingCount === null
     ? String(item.unlockedEndingCount)
     : `${item.unlockedEndingCount}/${item.totalEndingCount}`;
-}
-
-function formatEndingDisplay(endingId: string | null): string {
-  if (!endingId) {
-    return UI_STRINGS.endingLabel;
-  }
-
-  const match = /^e(\d+)(?:[_-](.+))?$/i.exec(endingId.trim());
-  if (!match) {
-    return `${UI_STRINGS.endingLabel} · ${endingId}`;
-  }
-
-  const number = match[1];
-  const rawName = match[2] ?? '';
-  const words = rawName
-    .split(/[_-]+/g)
-    .map(word => word.trim())
-    .filter(Boolean);
-  const joinedName = words.join(' ');
-  const name = joinedName
-    ? `${joinedName.charAt(0).toUpperCase()}${joinedName.slice(1)}`
-    : '';
-
-  return `${UI_STRINGS.endingLabel} №${number}${name ? ` · ${name}` : ''}`;
 }
 
 function buildReaderParagraphs(
