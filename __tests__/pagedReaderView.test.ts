@@ -1,5 +1,10 @@
 import React from 'react';
-import {StyleSheet, Text} from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  type StyleProp,
+  type TextStyle,
+} from 'react-native';
 import {
   derivePagedReaderBehavior,
   type PagedReaderBehavior,
@@ -224,7 +229,17 @@ describe('PagedReaderView component contract', () => {
   test('keeps the glyph safety inset inside both TextView boxes', () => {
     const state = createCommittedState();
     const behavior = createBehavior(state);
-    const request = planPaginationMeasurement(state, ['Проверочная строка.']);
+    const measurementState = updatePagedReaderGeometry(
+      createPagedReaderState(),
+      {
+        width: 360,
+        height: 180,
+        fontScale: 1,
+      },
+    );
+    const request = planPaginationMeasurement(measurementState, [
+      'Проверочная строка.',
+    ]);
     if (!request) {
       throw new Error('Expected pagination request.');
     }
@@ -237,6 +252,7 @@ describe('PagedReaderView component contract', () => {
     visit(tree, element => {
       if (
         !measurementText &&
+        element.type === Text &&
         typeof element.props.onTextLayout === 'function'
       ) {
         measurementText = element;
@@ -244,6 +260,7 @@ describe('PagedReaderView component contract', () => {
 
       if (
         !visibleText &&
+        element.type === Text &&
         textContent(element.props.children as React.ReactNode) ===
           (behavior.currentPage?.paragraphs.join('\n') ?? '')
       ) {
@@ -256,9 +273,11 @@ describe('PagedReaderView component contract', () => {
     }
 
     const measurementStyle = StyleSheet.flatten(
-      measurementText.props.style as never,
+      measurementText.props.style as StyleProp<TextStyle>,
     );
-    const visibleStyle = StyleSheet.flatten(visibleText.props.style as never);
+    const visibleStyle = StyleSheet.flatten(
+      visibleText.props.style as StyleProp<TextStyle>,
+    );
 
     expect(READER_TEXT_HORIZONTAL_INSET).toBeGreaterThan(0);
     expect(measurementStyle.paddingHorizontal).toBe(
