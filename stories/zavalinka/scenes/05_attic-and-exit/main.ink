@@ -12,4 +12,10 @@ INCLUDE scenes/05_attic-and-exit/05_10_choice-after-third-window-hit.ink
 INCLUDE scenes/05_attic-and-exit/05_11_ending-attic-window-breach.ink
 INCLUDE scenes/05_attic-and-exit/05_12_attic-window-secured.ink
 INCLUDE scenes/05_attic-and-exit/05_13_wait-for-dawn-on-attic.ink
+INCLUDE scenes/05_attic-and-exit/05_13a_wait-for-dawn-both-alive.ink
+INCLUDE scenes/05_attic-and-exit/05_13b_wait-for-dawn-lera-alone.ink
+INCLUDE scenes/05_attic-and-exit/05_13c_wait-for-dawn-ilya-alone.ink
 INCLUDE scenes/05_attic-and-exit/05_14_open-opposite-gable-exit.ink
+INCLUDE scenes/05_attic-and-exit/05_14a_open-opposite-gable-both-alive.ink
+INCLUDE scenes/05_attic-and-exit/05_14b_open-opposite-gable-lera-alone.ink
+INCLUDE scenes/05_attic-and-exit/05_14c_open-opposite-gable-ilya-alone.ink

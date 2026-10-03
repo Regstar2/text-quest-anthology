@@ -1,7 +1,16 @@
 // Scene group: 06_escape-and-endings
 INCLUDE scenes/06_escape-and-endings/06_01_choice-roof-descent.ink
+INCLUDE scenes/06_escape-and-endings/06_01a_choice-roof-descent-both-alive.ink
+INCLUDE scenes/06_escape-and-endings/06_01b_choice-roof-descent-lera-alone.ink
+INCLUDE scenes/06_escape-and-endings/06_01c_choice-roof-descent-ilya-alone.ink
 INCLUDE scenes/06_escape-and-endings/06_02_rope-descent.ink
+INCLUDE scenes/06_escape-and-endings/06_02a_rope-descent-both-alive.ink
+INCLUDE scenes/06_escape-and-endings/06_02b_rope-descent-lera-alone.ink
+INCLUDE scenes/06_escape-and-endings/06_02c_rope-descent-ilya-alone.ink
 INCLUDE scenes/06_escape-and-endings/06_03_drop-without-rope.ink
+INCLUDE scenes/06_escape-and-endings/06_03a_drop-without-rope-both-alive.ink
+INCLUDE scenes/06_escape-and-endings/06_03b_drop-without-rope-lera-alone.ink
+INCLUDE scenes/06_escape-and-endings/06_03c_drop-without-rope-ilya-alone.ink
 INCLUDE scenes/06_escape-and-endings/06_04_evaluate-survivors-after-escape.ink
 INCLUDE scenes/06_escape-and-endings/06_05_choice-one-survivor-bitten.ink
 INCLUDE scenes/06_escape-and-endings/06_06_lera-alone-after-escape.ink

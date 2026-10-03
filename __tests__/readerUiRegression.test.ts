@@ -1,196 +1,323 @@
-export {};
+import {
+  applyPagedReaderLayout,
+  committedPageBodyHeight,
+  derivePagedReaderBehavior,
+  resolvePagedReaderForwardAction,
+} from '../src/app/PagedReaderBehavior';
+import {
+  commitPaginationMeasurement,
+  createPagedReaderState,
+  movePagedReaderToPage,
+  planPaginationMeasurement,
+  updatePagedReaderGeometry,
+  type PagedReaderState,
+} from '../src/app/PagedReaderPagination';
 
-const fs = jest.requireActual('fs') as {
-  readFileSync(path: string, encoding: 'utf8'): string;
-};
-const pathModule = jest.requireActual('path') as {
-  join(...paths: string[]): string;
-};
-const processModule = jest.requireActual('process') as {
-  cwd(): string;
-};
+const BASE_GEOMETRY = {width: 360, height: 180, fontScale: 1};
 
-function source(path: string): string {
-  return fs
-    .readFileSync(pathModule.join(processModule.cwd(), path), 'utf8')
-    .replace(/\r\n/g, '\n');
+function passages(count: number): string[] {
+  return Array.from({length: count}, (_, index) => `Абзац ${index + 1}.`);
 }
 
-describe('v0.1.8 reader UI regressions', () => {
-  test('interaction dock is only mounted on the active choice or ending page', () => {
-    const app = source('src/app/AppV018Stable.tsx');
+function paginate(
+  source: readonly string[],
+  options: Readonly<{
+    fontScale?: number;
+    bannerReserve?: number;
+    pagesPerBanner?: number;
+  }> = {},
+): PagedReaderState {
+  let state = updatePagedReaderGeometry(createPagedReaderState(), {
+    ...BASE_GEOMETRY,
+    fontScale: options.fontScale ?? 1,
+  });
+  const request = planPaginationMeasurement(
+    state,
+    source,
+    options.bannerReserve ?? 0,
+    options.pagesPerBanner ?? 0,
+  );
+  if (!request) {
+    throw new Error('Expected pagination request.');
+  }
 
-    expect(app).toContain('{isInteractionPage ? (');
-    expect(app).not.toContain('interactionDockHidden');
-    expect(app).toContain('isEndingPage ? renderEndingActions() : renderChoices(true)');
+  state = commitPaginationMeasurement(
+    state,
+    request,
+    request.text.split('\n'),
+  );
+  return state;
+}
+
+function behavior(
+  state: PagedReaderState,
+  overrides: Partial<Parameters<typeof derivePagedReaderBehavior>[0]> = {},
+) {
+  return derivePagedReaderBehavior({
+    state,
+    passageCount: state.processedPassageCount,
+    paginationPending: false,
+    interactionRequested: false,
+    interactionTargetPassageCount: null,
+    hasInteraction: true,
+    bannerReadyHeight: 0,
+    bannerEligible: true,
+    ...overrides,
+  });
+}
+
+describe('paged reader behavioral regressions', () => {
+  test('1 -> 2 -> 3 -> 4 and back keeps canonical numbers and page text', () => {
+    const initial = paginate(passages(24));
+    expect(initial.pages.length).toBeGreaterThanOrEqual(4);
+    const committedPages = initial.pages;
+    const committedText = initial.pages.map(page => page.paragraphs.join('\n'));
+
+    let state = initial;
+    for (const pageIndex of [0, 1, 2, 3, 2, 1]) {
+      state = movePagedReaderToPage(state, pageIndex);
+      const view = behavior(state);
+
+      expect(view.displayedPageNumber).toBe(pageIndex + 1);
+      expect(view.currentPage?.paragraphs.join('\n')).toBe(
+        committedText[pageIndex],
+      );
+      expect(state.pages).toBe(committedPages);
+    }
   });
 
-  test('terminal transition advances from the page actually shown to the reader', () => {
-    const app = source('src/app/AppV018Stable.tsx');
+  test('2 -> 3(ad) -> 4 does not mutate physical pages or numbering', () => {
+    const initial = paginate(passages(24), {
+      bannerReserve: 56,
+      pagesPerBanner: 3,
+    });
+    const committedPages = initial.pages;
+    const committedText = initial.pages.map(page => page.paragraphs.join('\n'));
 
-    expect(app).toContain(
-      'stablePageFrameRef.current?.pageIndex ?? effectivePageIndex;',
-    );
-    expect(app).toContain(
-      "readerMode === 'pages' ? currentReaderPageIndex + 1 : undefined;",
-    );
-    expect(app).toContain(
-      'const result = await session.choose(choiceIndex, nextReaderPageIndex);',
-    );
-    expect(app).toContain('void recordEnding(activeStory.id, result.snapshot);');
-    expect(app).not.toContain(
-      'await recordEnding(activeStory.id, result.snapshot);',
-    );
-  });
+    let state = movePagedReaderToPage(initial, 1);
+    let view = behavior(state, {bannerReadyHeight: 56});
+    expect(view.displayedPageNumber).toBe(2);
+    expect(view.pageBannerActive).toBe(false);
 
-  test('page measurement cannot paint over visible reader text during remeasurement', () => {
-    const app = source('src/app/AppV018Stable.tsx');
+    state = movePagedReaderToPage(state, 2);
+    view = behavior(state, {bannerReadyHeight: 56});
+    expect(view.displayedPageNumber).toBe(3);
+    expect(view.pageBannerActive).toBe(true);
+    expect(committedPageBodyHeight(124, view)).toBe(180);
 
-    expect(app).not.toContain('fallbackPageParagraphs');
-    expect(app).toContain('top: -10000');
-    expect(app).toContain("color: 'transparent'");
-    expect(app).toContain('collapsable={false}');
-    expect(app).toContain('key={`measurement-${measurementKey}`}');
-    expect(app).not.toContain('key={measurementKey}');
-    expect(app).not.toContain('key={`reader-page-${measurementKey}`}');
-    expect(app).toContain(
-      "key={`page-${displayedPageFrame?.key ?? 'empty'}-${index}`}",
-    );
-  });
-
-  test('reader holds the last fully resolved frame until measurement and layout are ready', () => {
-    const app = source('src/app/AppV018Stable.tsx');
-
-    expect(app).toContain(
-      'const stablePageFrameRef = useRef<ReaderPageFrame | null>(null);',
-    );
-    expect(app).toContain(
-      'const [pageLayoutPending, setPageLayoutPending] = useState(false);',
-    );
-    expect(app).toContain(
-      'const pageFrameReady = measurementReady && !pageLayoutPending;',
-    );
-    expect(app).toContain('if (pageFrameReady) {');
-    expect(app).toContain('stablePageFrameRef.current = {');
-    expect(app).toContain('const displayedPageFrame = stablePageFrameRef.current;');
-    expect(app).toContain(
-      'const visiblePageParagraphs = displayedPageFrame?.paragraphs ?? [];',
-    );
-    expect(app).toContain('const pageTransitionReady =');
-    expect(app).toContain('if (pageLayoutPending) {');
-    expect(app).toContain('setPageLayoutPending(false);');
-  });
-
-  test('reader cursor drives text, arrows and counter from one page index', () => {
-    const app = source('src/app/AppV018Stable.tsx');
-
-    expect(app).toContain(
-      'const [readerPageIndex, setReaderPageIndex] = useState(0);',
-    );
-    expect(app).toContain('clampPageIndex(readerPageIndex, pages.length)');
-    expect(app).toContain('const previousPageIndex = effectivePageIndex;');
-    expect(app).toContain('setReaderPageIndex(nextPageIndex);');
-    expect(app).toContain('lastPageNumberRef.current = pageNumber;');
-    expect(app).toContain('key={`page-counter-${displayedPageNumber}`}');
-    expect(app).toContain('{displayedPageNumber}');
-    expect(app).not.toContain('const [pageNumber, setPageNumber] = useState(1);');
-    expect(app).not.toContain('setPageNumber(');
-    expect(app).not.toContain('`${effectivePageIndex + 1}/${pages.length}`');
-    expect(app).not.toContain("readerPalette.muted}]}>\n                    …");
-  });
-
-  test('reader footer keeps the last resolved number while a new frame is pending', () => {
-    const app = source('src/app/AppV018Stable.tsx');
-
-    expect(app).toContain('const lastPageNumberRef = useRef(1);');
-    expect(app).toContain('lastPageNumberRef.current = pageNumber;');
-    expect(app).toContain(
-      'displayedPageFrame?.pageNumber ?? lastPageNumberRef.current;',
-    );
-  });
-
-  test('page pagination uses the same canonical height with or without a banner', () => {
-    const app = source('src/app/AppV018Stable.tsx');
-
-    expect(app).toContain('useWindowDimensions');
-    expect(app).toContain('const bannerReservedHeight = Math.min(');
-    expect(app).toContain('const paginationHeight =');
-    expect(app).toContain(
-      'pageHeight - (pageBannerActive ? 0 : bannerReservedHeight)',
-    );
-    expect(app).toContain(
-      'paginateLines(activeLines, paginationHeight, interactionReserve)',
-    );
-    expect(app).toContain(
-      'key: `${readerRevision}:${effectivePageIndex}:${paginationHeight}`',
+    state = movePagedReaderToPage(state, 3);
+    view = behavior(state, {bannerReadyHeight: 56});
+    expect(view.displayedPageNumber).toBe(4);
+    expect(view.pageBannerActive).toBe(false);
+    expect(state.pages).toBe(committedPages);
+    expect(state.pages.map(page => page.paragraphs.join('\n'))).toEqual(
+      committedText,
     );
   });
 
-  test('page navigation updates banner visibility before exposing the target page', () => {
-    const app = source('src/app/AppV018Stable.tsx');
-    const bannerUpdate = app.indexOf('setPageBannerVisible(nextBannerVisible);');
-    const cursorUpdate = app.indexOf('setReaderPageIndex(nextPageIndex);');
-    const persistence = app.indexOf('await session.setPage(nextPageIndex);');
+  test('off-by-one numbering is derived only from the canonical page index', () => {
+    const initial = paginate(passages(24));
 
-    expect(bannerUpdate).toBeGreaterThan(-1);
-    expect(cursorUpdate).toBeGreaterThan(bannerUpdate);
-    expect(persistence).toBeGreaterThan(cursorUpdate);
-    expect(app).toContain('setPageLayoutPending(true);');
-    expect(app).toContain('setPageBannerVisible(previousBannerVisible);');
+    for (let pageIndex = 0; pageIndex < initial.pages.length; pageIndex += 1) {
+      const state = movePagedReaderToPage(initial, pageIndex);
+      expect(behavior(state).displayedPageNumber).toBe(pageIndex + 1);
+    }
   });
 
-  test('hidden native banner collapses its React spacer completely', () => {
-    const yandexAds = source('src/ads/yandex/YandexAdsProvider.tsx');
+  test('rapid navigation never exposes text from another physical page', () => {
+    const initial = paginate(passages(30));
+    const expected = initial.pages.map(page => page.paragraphs.join('\n'));
+    const sequence = [
+      1, 2, 3, 4, 3, 4, 2, 1, 2, 3, 0, 1, 0,
+    ].filter(index => index < initial.pages.length);
 
-    expect(yandexAds).toContain(
-      'function YandexBanner({visible}: AdsBannerProps): React.JSX.Element',
-    );
-    expect(yandexAds).toContain(
-      'height: canShowNativeBanner && visible ? reservedHeight : 0,',
-    );
-    expect(yandexAds).not.toContain('visible || reserveSpace');
+    let state = initial;
+    for (const pageIndex of sequence) {
+      state = movePagedReaderToPage(state, pageIndex);
+      const view = behavior(state);
+      expect(view.currentPage?.pageIndex).toBe(pageIndex);
+      expect(view.currentPage?.paragraphs.join('\n')).toBe(expected[pageIndex]);
+    }
   });
 
-  test('choices persist page boundaries with their original choice reserve', () => {
-    const app = source('src/app/AppV018Stable.tsx');
-    const session = source('src/narrative/StorySession.ts');
+  test('forward behavior distinguishes physical pages from interaction screen', () => {
+    const initial = paginate(passages(18));
+    const middle = movePagedReaderToPage(initial, 1);
+    const middleView = behavior(middle);
 
-    expect(session).toContain("export const READER_PAGE_BREAK_MARKER = '\\uE001';");
-    expect(session).toContain(
-      'const previousChoiceCount = this.currentSnapshot.choices.length;',
-    );
-    expect(session).toContain(
-      '`${READER_PAGE_BREAK_MARKER}:${previousChoiceCount}`',
-    );
-    expect(app).toContain('let segmentStart = 0;');
-    expect(app).toContain('measuredLines[index].includes(FORCED_PAGE_BREAK_MARKER)');
-    expect(app).toContain('getPageBreakReserve(measuredLines[index])');
-    expect(app).toContain(
-      '!passage.startsWith(FORCED_PAGE_BREAK_MARKER)',
+    expect(resolvePagedReaderForwardAction(middleView, middle, false)).toEqual({
+      type: 'page',
+      pageIndex: 2,
+    });
+
+    const last = movePagedReaderToPage(initial, initial.pages.length - 1);
+    const lastView = behavior(last);
+    expect(resolvePagedReaderForwardAction(lastView, last, false)).toEqual({
+      type: 'interaction',
+    });
+
+    const interaction = behavior(last, {interactionRequested: true});
+    expect(interaction.interactionVisible).toBe(true);
+    expect(interaction.displayedPageNumber).toBeNull();
+  });
+
+  test('long or multiline choices cannot redistribute narrative pages', () => {
+    const initial = paginate(passages(24));
+    const committedPages = initial.pages;
+    const last = movePagedReaderToPage(initial, initial.pages.length - 1);
+
+    const shortChoiceView = behavior(last, {
+      interactionRequested: true,
+      hasInteraction: true,
+    });
+    const multilineChoiceView = behavior(last, {
+      interactionRequested: true,
+      hasInteraction: true,
+    });
+
+    expect(shortChoiceView.interactionVisible).toBe(true);
+    expect(multilineChoiceView.interactionVisible).toBe(true);
+    expect(last.pages).toBe(committedPages);
+    expect(last.pages.map(page => page.key)).toEqual(
+      committedPages.map(page => page.key),
     );
   });
 
-  test('pages mode paginates the accumulated transcript and feed-to-pages opens its end', () => {
-    const app = source('src/app/AppV018Stable.tsx');
+  test('failed banner creates no empty reserve and slow load affects only new pages', () => {
+    const firstPassages = passages(10);
+    const initial = paginate(firstPassages);
+    const committedPages = initial.pages;
 
-    expect(app).toContain('const passages = snapshot.passages');
-    expect(app).toContain('if (passages.length === 0)');
-    expect(app).toContain('return passages;');
-    expect(app).toContain('setReaderPageIndex(Number.MAX_SAFE_INTEGER);');
-    expect(app).not.toContain(
-      'setSnapshot({...snapshot, pageIndex: Number.MAX_SAFE_INTEGER});',
+    expect(initial.pages.every(page => page.bannerReserve === 0)).toBe(true);
+    expect(
+      behavior(movePagedReaderToPage(initial, 0), {bannerReadyHeight: 0})
+        .pageBannerActive,
+    ).toBe(false);
+
+    const nextPassages = [...firstPassages, ...passages(8).map(text => `Новый ${text}`)];
+    const request = planPaginationMeasurement(initial, nextPassages, 56, 3);
+    if (!request) {
+      throw new Error('Expected append request after delayed banner load.');
+    }
+
+    const appended = commitPaginationMeasurement(
+      initial,
+      request,
+      request.text.split('\n'),
+    );
+
+    expect(appended.pages.slice(0, committedPages.length)).toEqual(
+      committedPages,
+    );
+    for (let index = 0; index < committedPages.length; index += 1) {
+      expect(appended.pages[index]).toBe(committedPages[index]);
+      expect(appended.pages[index].bannerReserve).toBe(0);
+    }
+  });
+
+  test.each([1, 1.35])(
+    'font scale %s produces committed pages with matching geometry revision',
+    fontScale => {
+      const state = paginate(passages(24), {fontScale});
+      const view = behavior(state);
+
+      expect(state.geometry?.fontScale).toBe(fontScale);
+      expect(
+        state.pages.every(
+          page => page.geometryRevision === state.geometryRevision,
+        ),
+      ).toBe(true);
+      expect(view.pageTransitionReady).toBe(true);
+    },
+  );
+
+  test('maximum font scale reduces capacity instead of overlapping content', () => {
+    const normal = paginate(passages(24), {fontScale: 1});
+    const scaled = paginate(passages(24), {fontScale: 1.35});
+
+    expect(scaled.pages.length).toBeGreaterThan(normal.pages.length);
+    expect(
+      Math.max(...scaled.pages.map(page => page.lines.length)),
+    ).toBeLessThan(
+      Math.max(...normal.pages.map(page => page.lines.length)),
     );
   });
 
-  test('ending restart acts directly and ending labels expose number plus name', () => {
-    const app = source('src/app/AppV018Stable.tsx');
-
-    expect(app).toMatch(
-      /setMenuView\(null\);\s+const session = sessionRef\.current;/,
+  test('stale page-body layout callback cannot overwrite newer geometry', () => {
+    let state = updatePagedReaderGeometry(
+      createPagedReaderState(),
+      BASE_GEOMETRY,
     );
-    expect(app).toContain('void restartActiveStory();');
-    expect(app).toContain('formatEndingDisplay(snapshot.endingId)');
-    expect(app).toContain('formatEndingDisplay(ending.id)');
-    expect(app).toContain('`${UI_STRINGS.endingLabel} №${number}${name ? ` · ${name}` : \'\'}`');
+    const oldRevision = state.geometryRevision;
+
+    state = applyPagedReaderLayout(state, oldRevision, {
+      ...BASE_GEOMETRY,
+      height: 220,
+    });
+    const current = state;
+
+    state = applyPagedReaderLayout(state, oldRevision, {
+      ...BASE_GEOMETRY,
+      height: 120,
+    });
+
+    expect(state).toBe(current);
+    expect(state.geometry?.height).toBe(220);
+  });
+
+  test('delayed layout callback from an old geometry revision is ignored', () => {
+    const source = passages(18);
+    let state = updatePagedReaderGeometry(
+      createPagedReaderState(),
+      BASE_GEOMETRY,
+    );
+    const staleRequest = planPaginationMeasurement(state, source);
+    if (!staleRequest) {
+      throw new Error('Expected initial pagination request.');
+    }
+
+    state = updatePagedReaderGeometry(state, {
+      ...BASE_GEOMETRY,
+      height: 220,
+    });
+    const afterGeometryChange = state;
+    state = commitPaginationMeasurement(
+      state,
+      staleRequest,
+      staleRequest.text.split('\n'),
+    );
+
+    expect(state).toBe(afterGeometryChange);
+    expect(state.pages).toHaveLength(0);
+
+    const currentRequest = planPaginationMeasurement(state, source);
+    if (!currentRequest) {
+      throw new Error('Expected current pagination request.');
+    }
+    state = commitPaginationMeasurement(
+      state,
+      currentRequest,
+      currentRequest.text.split('\n'),
+    );
+
+    expect(state.pages.length).toBeGreaterThan(0);
+    expect(
+      state.pages.every(
+        page => page.geometryRevision === state.geometryRevision,
+      ),
+    ).toBe(true);
+  });
+
+  test('pending pagination hides both the page number and navigation', () => {
+    const state = paginate(passages(18));
+    const view = behavior(state, {paginationPending: true});
+
+    expect(view.pageTransitionReady).toBe(false);
+    expect(view.displayedPageNumber).toBeNull();
+    expect(view.canGoNext).toBe(false);
+    expect(view.canGoPrevious).toBe(false);
+    expect(resolvePagedReaderForwardAction(view, state, false)).toEqual({
+      type: 'none',
+    });
   });
 });

@@ -9,6 +9,7 @@ import {UnlockedEndingsRepository} from './UnlockedEndingsRepository';
 type NativeStorySaveStorageModule = Readonly<{
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
+  setItemDeferred(key: string, value: string): Promise<void>;
   removeItem(key: string): Promise<void>;
 }>;
 
@@ -29,6 +30,7 @@ function nativeModule(): NativeStorySaveStorageModule {
 export const nativeStorySaveStorage: StorySaveStorage = {
   getItem: key => nativeModule().getItem(key),
   setItem: (key, value) => nativeModule().setItem(key, value),
+  setItemDeferred: (key, value) => nativeModule().setItemDeferred(key, value),
   removeItem: key => nativeModule().removeItem(key),
 };
 

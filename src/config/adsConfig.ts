@@ -7,11 +7,6 @@ export interface AdsConfig {
     banner: string;
     interstitial: string;
   };
-  bannerLayout: {
-    heightRatio: number;
-    minHeight: number;
-    maxHeight: number;
-  };
   bannerFrequency: {
     pagesPerBanner: number;
     feedChoicesPerBanner: number;
@@ -55,11 +50,6 @@ export function createAdsConfig(
     adUnits: {
       banner: bannerAdUnitId ?? '',
       interstitial: interstitialAdUnitId ?? '',
-    },
-    bannerLayout: {
-      heightRatio: 0.14,
-      minHeight: 96,
-      maxHeight: 120,
     },
     bannerFrequency: {
       pagesPerBanner: 3,

@@ -60,6 +60,20 @@ class StorySaveStorageModule(
     }
 
     @ReactMethod
+    fun setItemDeferred(key: String, value: String, promise: Promise) {
+        try {
+            preferences.edit().putString(key, value).apply()
+            promise.resolve(null)
+        } catch (error: Exception) {
+            promise.reject(
+                "STORY_SAVE_WRITE_FAILED",
+                "Failed to enqueue the local reader cursor write.",
+                error,
+            )
+        }
+    }
+
+    @ReactMethod
     fun removeItem(key: String, promise: Promise) {
         try {
             val committed = preferences.edit().remove(key).commit()

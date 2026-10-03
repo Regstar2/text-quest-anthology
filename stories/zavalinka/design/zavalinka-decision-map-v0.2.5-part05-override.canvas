@@ -1,0 +1,148 @@
+{
+  "nodes": [
+    {
+      "id": "meta_part05_override",
+      "type": "text",
+      "text": "# v0.2.5 Part 05 — structural override\n\nЭтот фрагмент имеет приоритет над конфликтующими рёбрами Part 05 в `zavalinka-decision-map.canvas`.\n\nГраница событий:\n- `attic_both` / `attic_lera` / `attic_ilya` заканчиваются на взгляде на торцевое окно;\n- `attic_route` владеет физическим подходом к окну;\n- `pipe_preblock` владеет ранним осознанием риска по ранее известной трубе;\n- `window_canon` владеет первым фактическим контактом у окна.\n\nНовые state changes не добавляются.",
+      "x": 0,
+      "y": 0,
+      "width": 760,
+      "height": 430,
+      "color": "6"
+    },
+    {
+      "id": "attic_both",
+      "type": "text",
+      "text": "# Чердак: оба живы\n\nПосле aftermath подъёма и ослабления давления у люка Илья и Лера переводят внимание на маленькое торцевое окно.\n\n→ `attic_route`.",
+      "x": 0,
+      "y": 650,
+      "width": 520,
+      "height": 240,
+      "color": "5"
+    },
+    {
+      "id": "attic_lera",
+      "type": "text",
+      "text": "# Чердак: Лера одна\n\nПосле гибели Ильи Лера перестаёт постоянно удерживать люк и переводит взгляд на маленькое торцевое окно.\n\n→ `attic_route`.",
+      "x": 0,
+      "y": 980,
+      "width": 520,
+      "height": 240,
+      "color": "1"
+    },
+    {
+      "id": "attic_ilya",
+      "type": "text",
+      "text": "# Чердак: Илья один\n\nПосле потери Леры и ослабления давления у люка Илья переводит внимание на маленькое торцевое окно.\n\n→ `attic_route`.",
+      "x": 0,
+      "y": 1310,
+      "width": 520,
+      "height": 240,
+      "color": "5"
+    },
+    {
+      "id": "attic_route",
+      "type": "text",
+      "text": "## Общий подход к торцевому окну\n\nГерой/герои уже смотрят на окно и теперь физически проходят к нему через низкий чердак, пригибаясь под скатом.\n\nОни занимают позицию у окна. В ливне через мокрое стекло почти ничего не видно.\n\nЗаражённый ещё не показан, не касается рамы и не выдаёт себя отдельным новым сигналом.\n\nПосле этого применяется ранее полученное знание `PIPE_KNOWN`.",
+      "x": 760,
+      "y": 980,
+      "width": 650,
+      "height": 340,
+      "color": "6"
+    },
+    {
+      "id": "pipe_preblock",
+      "type": "text",
+      "text": "## Труба замечена заранее\n\n`PIPE_KNOWN = TRUE`.\n\nУже находясь у окна, герой соотносит торцевое окно с ранее известной внешней географией газовой трубы.\n\nРиск распознаётся до физического контакта заражённого со стеклом.\n\n→ D11A / `d11_pre`.",
+      "x": 1710,
+      "y": 740,
+      "width": 620,
+      "height": 310,
+      "color": "5"
+    },
+    {
+      "id": "window_canon",
+      "type": "text",
+      "text": "# Канонический контакт у чердачного окна\n\n`PIPE_KNOWN = FALSE` либо герой сознательно дождался контакта после ранней ветки.\n\nПерсонаж уже находится у окна. Только здесь начинается наблюдаемый внешний контакт: движение/металл снаружи, пальцы на раме, лицо за мокрым стеклом, первый, второй и третий удар.\n\nПосле третьего удара → D11B / `d11`.",
+      "x": 1710,
+      "y": 1180,
+      "width": 620,
+      "height": 350,
+      "color": "1"
+    },
+    {
+      "id": "d11_pre",
+      "type": "text",
+      "text": "## D11A. До контакта у окна\n\nСуществующий ранний choice сохраняется без изменения смысла, условий и state changes за пределами уже утверждённой логики.",
+      "x": 2580,
+      "y": 740,
+      "width": 540,
+      "height": 220,
+      "color": "3"
+    },
+    {
+      "id": "d11",
+      "type": "text",
+      "text": "## D11B. После третьего удара\n\nСуществующий поздний choice сохраняется без изменения смысла и условий.",
+      "x": 2580,
+      "y": 1250,
+      "width": 540,
+      "height": 200,
+      "color": "3"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_both_route",
+      "fromNode": "attic_both",
+      "fromSide": "right",
+      "toNode": "attic_route",
+      "toSide": "left"
+    },
+    {
+      "id": "e_lera_route",
+      "fromNode": "attic_lera",
+      "fromSide": "right",
+      "toNode": "attic_route",
+      "toSide": "left"
+    },
+    {
+      "id": "e_ilya_route",
+      "fromNode": "attic_ilya",
+      "fromSide": "right",
+      "toNode": "attic_route",
+      "toSide": "left"
+    },
+    {
+      "id": "e_route_pipe",
+      "fromNode": "attic_route",
+      "fromSide": "right",
+      "toNode": "pipe_preblock",
+      "toSide": "left",
+      "label": "PIPE_KNOWN=true"
+    },
+    {
+      "id": "e_route_window",
+      "fromNode": "attic_route",
+      "fromSide": "right",
+      "toNode": "window_canon",
+      "toSide": "left",
+      "label": "PIPE_KNOWN=false"
+    },
+    {
+      "id": "e_pipe_d11_pre",
+      "fromNode": "pipe_preblock",
+      "fromSide": "right",
+      "toNode": "d11_pre",
+      "toSide": "left"
+    },
+    {
+      "id": "e_window_d11",
+      "fromNode": "window_canon",
+      "fromSide": "right",
+      "toNode": "d11",
+      "toSide": "left",
+      "label": "после 3-го удара"
+    }
+  ]
+}

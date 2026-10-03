@@ -52,7 +52,8 @@ describe('v0.1.8 architecture gate', () => {
     const app = source(APP_PATH);
 
     expect(app).toContain('FORCED_PAGE_BREAK_MARKER');
-    expect(app).toContain('isEndingPage');
+    expect(app).toContain('snapshot.isEnded');
+    expect(app).toContain('renderEndingActions()');
     expect(app).toContain('formatEndingProgress(item)');
     expect(app).not.toContain("screen === 'ending'");
   });
@@ -94,6 +95,6 @@ describe('v0.1.8 architecture gate', () => {
     expect(reactAdsProvider).not.toMatch(/BannerView|BannerAdSize/);
     expect(reactAdsProvider).toContain('NativeBannerController');
     expect(androidActivity).toContain('BannerAdView');
-    expect(androidActivity).toContain('BannerAdSize.inline');
+    expect(androidActivity).toContain('BannerAdSize.sticky');
   });
 });

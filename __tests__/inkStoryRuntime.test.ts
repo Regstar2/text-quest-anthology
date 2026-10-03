@@ -95,7 +95,7 @@ describe('InkStoryRuntime packaged story', () => {
       expect.arrayContaining([
         expect.objectContaining({
           enabled: true,
-          text: expect.stringContaining('Осмотреть чердак и подготовить вещи'),
+          text: expect.stringContaining('Осмотреть чердак и заранее подготовить там подручные вещи'),
         }),
       ]),
     );
@@ -103,7 +103,7 @@ describe('InkStoryRuntime packaged story', () => {
     current = chooseByText(
       runtime,
       current,
-      'Осмотреть чердак и подготовить вещи',
+      'Осмотреть чердак и заранее подготовить там подручные вещи',
     );
     current = chooseByText(runtime, current, 'Лера дежурит первой');
 
