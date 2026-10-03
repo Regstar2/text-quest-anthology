@@ -11,7 +11,7 @@ export const STORY_MANIFEST = [
       schemaVersion: 1,
       contentVersion: 6,
       title: 'Завалинка',
-      description: 'Ночлег в опустевшем посёлке оборачивается борьбой за выживание. Заражённые всё ближе, безопасных мест становится меньше, а выбраться отсюда оказывается куда сложнее, чем казалось.',
+      description: 'Ночлег в опустевшем посёлке оборачивается борьбой за выживание.',
       cover: 'assets/cover.webp',
     },
     compiledStory: story0 as InkStoryContent,
