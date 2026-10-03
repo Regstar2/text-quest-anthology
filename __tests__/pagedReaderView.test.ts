@@ -1,5 +1,5 @@
 import React from 'react';
-import {Text} from 'react-native';
+import {StyleSheet, Text} from 'react-native';
 import {
   derivePagedReaderBehavior,
   type PagedReaderBehavior,
@@ -13,7 +13,6 @@ import {
   type PagedReaderState,
 } from '../src/app/PagedReaderPagination';
 import {
-  getPagedReaderTextWidth,
   PagedReaderView,
   READER_TEXT_HORIZONTAL_INSET,
 } from '../src/app/PagedReaderView';
@@ -222,15 +221,58 @@ describe('PagedReaderView component contract', () => {
     );
   });
 
-  test('keeps pagination width inside the clipped reader bounds', () => {
-    expect(READER_TEXT_HORIZONTAL_INSET).toBeGreaterThan(0);
-    expect(getPagedReaderTextWidth(360)).toBe(
-      360 - READER_TEXT_HORIZONTAL_INSET * 2,
+  test('keeps the glyph safety inset inside both TextView boxes', () => {
+    const state = createCommittedState();
+    const behavior = createBehavior(state);
+    const request = planPaginationMeasurement(state, ['Проверочная строка.']);
+    if (!request) {
+      throw new Error('Expected pagination request.');
+    }
+
+    const tree = renderView(behavior, {paginationRequest: request});
+    let measurementText: React.ReactElement<Record<string, unknown>> | null =
+      null;
+    let visibleText: React.ReactElement<Record<string, unknown>> | null = null;
+
+    visit(tree, element => {
+      if (
+        !measurementText &&
+        typeof element.props.onTextLayout === 'function'
+      ) {
+        measurementText = element;
+      }
+
+      if (
+        !visibleText &&
+        textContent(element.props.children as React.ReactNode) ===
+          (behavior.currentPage?.paragraphs.join('\n') ?? '')
+      ) {
+        visibleText = element;
+      }
+    });
+
+    if (!measurementText || !visibleText) {
+      throw new Error('Expected measurement and visible reader Text nodes.');
+    }
+
+    const measurementStyle = StyleSheet.flatten(
+      measurementText.props.style as never,
     );
-    expect(getPagedReaderTextWidth(READER_TEXT_HORIZONTAL_INSET)).toBe(0);
+    const visibleStyle = StyleSheet.flatten(visibleText.props.style as never);
+
+    expect(READER_TEXT_HORIZONTAL_INSET).toBeGreaterThan(0);
+    expect(measurementStyle.paddingHorizontal).toBe(
+      READER_TEXT_HORIZONTAL_INSET,
+    );
+    expect(visibleStyle.paddingHorizontal).toBe(
+      READER_TEXT_HORIZONTAL_INSET,
+    );
+    expect(measurementStyle.textAlign).toBe(visibleStyle.textAlign);
+    expect(measurementStyle.fontSize).toBe(visibleStyle.fontSize);
+    expect(measurementStyle.lineHeight).toBe(visibleStyle.lineHeight);
   });
 
-  test('reports drawable text layout without mutating reader state', () => {
+  test('reports the full TextView frame without mutating reader state', () => {
     const state = createCommittedState();
     const behavior = createBehavior(state);
     const onPageLayout = jest.fn();
@@ -242,10 +284,7 @@ describe('PagedReaderView component contract', () => {
 
     onLayout({nativeEvent: {layout: {width: 360, height: 180}}});
 
-    expect(onPageLayout).toHaveBeenCalledWith(
-      360 - READER_TEXT_HORIZONTAL_INSET * 2,
-      180,
-    );
+    expect(onPageLayout).toHaveBeenCalledWith(360, 180);
     expect(state.pages[0]).toBe(behavior.currentPage);
   });
 });
