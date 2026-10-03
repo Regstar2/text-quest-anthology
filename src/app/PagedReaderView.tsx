@@ -18,6 +18,12 @@ import {
 import type {PagedReaderBehavior} from './PagedReaderBehavior';
 import type {ReaderPalette} from './ReaderTheme';
 
+export const READER_TEXT_HORIZONTAL_INSET = 2;
+
+export function getPagedReaderTextWidth(layoutWidth: number): number {
+  return Math.max(0, layoutWidth - READER_TEXT_HORIZONTAL_INSET * 2);
+}
+
 export type PagedReaderViewProps = Readonly<{
   behavior: PagedReaderBehavior;
   paginationRequest: PaginationMeasurementRequest | null;
@@ -111,7 +117,7 @@ export function PagedReaderView({
             collapsable={false}
             onLayout={(event: LayoutChangeEvent) => {
               const {width, height} = event.nativeEvent.layout;
-              onPageLayout(width, height);
+              onPageLayout(getPagedReaderTextWidth(width), height);
             }}
             style={styles.pageBody}>
             <View
@@ -218,6 +224,7 @@ const styles = StyleSheet.create({
     minHeight: 0,
     overflow: 'hidden',
     position: 'relative',
+    paddingHorizontal: READER_TEXT_HORIZONTAL_INSET,
   },
   tapZones: {
     ...StyleSheet.absoluteFill,
