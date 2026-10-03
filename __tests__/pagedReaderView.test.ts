@@ -12,7 +12,11 @@ import {
   type PaginationMeasurementRequest,
   type PagedReaderState,
 } from '../src/app/PagedReaderPagination';
-import {PagedReaderView} from '../src/app/PagedReaderView';
+import {
+  getPagedReaderTextWidth,
+  PagedReaderView,
+  READER_TEXT_HORIZONTAL_INSET,
+} from '../src/app/PagedReaderView';
 import {resolveReaderPalette} from '../src/app/ReaderTheme';
 
 const palette = resolveReaderPalette('light', false);
@@ -218,7 +222,15 @@ describe('PagedReaderView component contract', () => {
     );
   });
 
-  test('reports page body layout without mutating reader state', () => {
+  test('keeps pagination width inside the clipped reader bounds', () => {
+    expect(READER_TEXT_HORIZONTAL_INSET).toBeGreaterThan(0);
+    expect(getPagedReaderTextWidth(360)).toBe(
+      360 - READER_TEXT_HORIZONTAL_INSET * 2,
+    );
+    expect(getPagedReaderTextWidth(READER_TEXT_HORIZONTAL_INSET)).toBe(0);
+  });
+
+  test('reports drawable text layout without mutating reader state', () => {
     const state = createCommittedState();
     const behavior = createBehavior(state);
     const onPageLayout = jest.fn();
@@ -230,7 +242,10 @@ describe('PagedReaderView component contract', () => {
 
     onLayout({nativeEvent: {layout: {width: 360, height: 180}}});
 
-    expect(onPageLayout).toHaveBeenCalledWith(360, 180);
+    expect(onPageLayout).toHaveBeenCalledWith(
+      360 - READER_TEXT_HORIZONTAL_INSET * 2,
+      180,
+    );
     expect(state.pages[0]).toBe(behavior.currentPage);
   });
 });
