@@ -20,10 +20,6 @@ import type {ReaderPalette} from './ReaderTheme';
 
 export const READER_TEXT_HORIZONTAL_INSET = 2;
 
-export function getPagedReaderTextWidth(layoutWidth: number): number {
-  return Math.max(0, layoutWidth - READER_TEXT_HORIZONTAL_INSET * 2);
-}
-
 export type PagedReaderViewProps = Readonly<{
   behavior: PagedReaderBehavior;
   paginationRequest: PaginationMeasurementRequest | null;
@@ -117,7 +113,7 @@ export function PagedReaderView({
             collapsable={false}
             onLayout={(event: LayoutChangeEvent) => {
               const {width, height} = event.nativeEvent.layout;
-              onPageLayout(getPagedReaderTextWidth(width), height);
+              onPageLayout(width, height);
             }}
             style={styles.pageBody}>
             <View
@@ -210,7 +206,6 @@ const styles = StyleSheet.create({
   measureText: {
     position: 'absolute',
     left: 0,
-    right: 0,
     top: -10000,
     opacity: 0,
     color: 'transparent',
@@ -218,13 +213,13 @@ const styles = StyleSheet.create({
     lineHeight: STORY_LINE_HEIGHT,
     textAlign: 'justify',
     includeFontPadding: false,
+    paddingHorizontal: READER_TEXT_HORIZONTAL_INSET,
   },
   pageTextArea: {
     flex: 1,
     minHeight: 0,
     overflow: 'hidden',
     position: 'relative',
-    paddingHorizontal: READER_TEXT_HORIZONTAL_INSET,
   },
   tapZones: {
     ...StyleSheet.absoluteFill,
@@ -259,10 +254,12 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
   },
   storyParagraph: {
+    alignSelf: 'stretch',
     fontSize: 18,
     lineHeight: STORY_LINE_HEIGHT,
     textAlign: 'justify',
     includeFontPadding: false,
+    paddingHorizontal: READER_TEXT_HORIZONTAL_INSET,
   },
   buttonPressed: {opacity: 0.68},
   disabled: {opacity: 0.38},
