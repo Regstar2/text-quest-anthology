@@ -26,10 +26,11 @@ Text Quest Anthology — приложение для прохождения са
 **Стадия:** Public MVP — release candidate.
 
 - версия приложения: `0.4.0` (`versionCode 10`);
-- актуальный GitHub Release: [`v0.4.0-rc.1`](../../releases/tag/v0.4.0-rc.1);
+- актуальный опубликованный GitHub Release: [`v0.4.0-rc.2`](../../releases/tag/v0.4.0-rc.2) (10 октября 2026 года);
 - целевая площадка первого публичного релиза: RuStore;
-- финальный regression подписанного RC завершён 3 октября 2026 года;
-- автоматические проверки, release signing, privacy gate, offline flow, сохранения, реклама и финальный smoke на физическом Android-устройстве прошли обязательный release-candidate gate.
+- финальный regression подписанного `v0.4.0-rc.1` завершён 3 октября 2026 года;
+- автоматические проверки, release signing, privacy gate, offline flow, сохранения, реклама и финальный smoke на физическом Android-устройстве для `v0.4.0-rc.1` зафиксированы в [журнале регрессии](docs/testing/v0.4.0-rc-regression.md);
+- отдельный полный device regression для `v0.4.0-rc.2` в указанном журнале не зафиксирован.
 
 Публикация в RuStore не считается завершённой, пока приложение фактически не отправлено и не опубликовано магазином.
 
@@ -83,7 +84,7 @@ Text Quest Anthology — приложение для прохождения са
 Для установки release APK через ADB:
 
 ```powershell
-adb install -r .\text-quest-anthology-v0.4.0-rc.1.apk
+adb install -r .\text-quest-anthology-v0.4.0-rc.2.apk
 ```
 
 Package name приложения:
@@ -232,4 +233,4 @@ npm run verify:release-privacy
 - реклама требует сети, но её отсутствие не блокирует прохождение;
 - несовместимое сохранение после изменения версии контента может быть безопасно сброшено;
 - iOS, Windows и web-версии не входят в текущий scope;
-- текущий `v0.4.0-rc.1` является release candidate; публикация в RuStore — отдельный следующий шаг.
+- текущий `v0.4.0-rc.2` является release candidate; публикация в RuStore — отдельный следующий шаг.
